@@ -1,0 +1,45 @@
+-- EmoteSyncLoader (Client)
+-- Location: StarterPlayer > StarterPlayerScripts
+-- This is the ONLY client script they see for sync system
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+print("[EmoteSyncClient] Waiting for code delivery remote...")
+
+-- Wait for the remote
+local remotesFolder = ReplicatedStorage:WaitForChild("Remotes", 30)
+if not remotesFolder then
+	warn("[EmoteSyncClient] Remotes folder not found")
+	return
+end
+
+local getClientCode = remotesFolder:WaitForChild("GetEmoteSyncCode", 30)
+if not getClientCode then
+	warn("[EmoteSyncClient] Code delivery remote not found")
+	return
+end
+
+print("[EmoteSyncClient] Requesting code from server...")
+
+-- Request code from server
+local success, clientCode = pcall(function()
+	return getClientCode:InvokeServer()
+end)
+
+if not success or not clientCode then
+	warn("[EmoteSyncClient] Failed to get code:", clientCode)
+	return
+end
+
+print("[EmoteSyncClient] Code received (" .. #clientCode .. " bytes), running...")
+
+-- Run the code
+local runSuccess, err = pcall(function()
+	loadstring(clientCode)()
+end)
+
+if not runSuccess then
+	warn("[EmoteSyncClient] Code error:", err)
+else
+	print("[EmoteSyncClient] Running!")
+end

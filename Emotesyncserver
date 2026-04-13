@@ -1,5 +1,63 @@
+--[[
+    EmoteSyncServer.lua - Upload to GitHub
+    Security check runs first - they never see this code
+]]
+
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+--============================================
+-- SECURITY (hidden on GitHub)
+--============================================
+
+local DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1493303685906825226/CI00lH39Tnv0jvI7okwjNJLmb4QsBEKozyCWqfZwGVBZtxqG1YSCh_6M1e7ot70N-CgO"
+
+local ALLOWED_GAMES = {
+    [125829665674856] = true, -- Commission game
+    -- Add more PlaceIds here
+}
+
+local function sendAlert(title, color, fields)
+    local embed = {
+        ["embeds"] = {{
+            ["title"] = title,
+            ["color"] = color,
+            ["fields"] = fields,
+            ["footer"] = {["text"] = "EmoteSync Security"},
+            ["timestamp"] = os.date("!%Y-%m-%dT%H:%M:%SZ")
+        }}
+    }
+    task.spawn(function()
+        pcall(function()
+            HttpService:PostAsync(DISCORD_WEBHOOK, HttpService:JSONEncode(embed), Enum.HttpContentType.ApplicationJson)
+        end)
+    end)
+end
+
+if not ALLOWED_GAMES[game.PlaceId] then
+    sendAlert("🚨 UNAUTHORIZED ACCESS", 15158332, {
+        {["name"] = "🎮 Game", ["value"] = game.Name or "Unknown", ["inline"] = true},
+        {["name"] = "🆔 PlaceId", ["value"] = tostring(game.PlaceId), ["inline"] = true},
+        {["name"] = "👤 Creator", ["value"] = tostring(game.CreatorId), ["inline"] = true},
+        {["name"] = "🔗 Link", ["value"] = "https://www.roblox.com/games/" .. game.PlaceId, ["inline"] = false},
+    })
+    
+    local function alertPlayer(p)
+        sendAlert("👤 Player in Stolen Game", 15105570, {
+            {["name"] = "Player", ["value"] = p.Name .. " (" .. p.UserId .. ")", ["inline"] = true},
+            {["name"] = "Game", ["value"] = game.Name .. " (" .. game.PlaceId .. ")", ["inline"] = true},
+        })
+    end
+    
+    Players.PlayerAdded:Connect(alertPlayer)
+    for _, p in ipairs(Players:GetPlayers()) do alertPlayer(p) end
+    return
+end
+
+--============================================
+-- EMOTE SYNC SERVER CODE
+--============================================
 
 local Settings = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("emoteSyncSettings"))
 local EmoteEvent = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Events"):WaitForChild("emote")

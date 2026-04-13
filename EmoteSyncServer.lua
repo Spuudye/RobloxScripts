@@ -14,7 +14,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1493303685906825226/CI00lH39Tnv0jvI7okwjNJLmb4QsBEKozyCWqfZwGVBZtxqG1YSCh_6M1e7ot70N-CgO"
 
 local ALLOWED_GAMES = {
-    [125829665674856,132588498251022] = true, -- Commission game
+    [125829665674856] = true, -- Commission game
+    [132588498251022] = true, -- Commission game
     -- Add more PlaceIds here if needed
 }
 

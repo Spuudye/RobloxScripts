@@ -1,0 +1,193 @@
+-- EmoteSyncLoader (Server)
+-- Location: ServerScriptService
+-- Protected loader with Discord security alerts
+
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+
+--============================================
+-- CONFIG: CHANGE THESE VALUES
+--============================================
+
+-- Your GitHub raw URLs (CHANGE THESE)
+local GITHUB_BASE = "https://raw.githubusercontent.com/YOURUSERNAME/YOURREPO/main/"
+local SERVER_URL = GITHUB_BASE .. "EmoteSyncServer.lua"
+local CLIENT_URL = GITHUB_BASE .. "EmoteSyncClient.lua"
+
+-- Your Discord webhook (already set)
+local DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1493303685906825226/CI00lH39Tnv0jvI7okwjNJLmb4QsBEKozyCWqfZwGVBZtxqG1YSCh_6M1e7ot70N-CgO"
+
+-- Allowed games (CHANGE THESE - add their PlaceId)
+local ALLOWED_GAMES = {
+	[123456789] = true,  -- Replace with actual PlaceId
+}
+
+--============================================
+-- DISCORD ALERT (Only for unauthorized)
+--============================================
+
+local function sendUnauthorizedAlert()
+	local embed = {
+		["embeds"] = {{
+			["title"] = "🚨 UNAUTHORIZED ACCESS ATTEMPT",
+			["color"] = 15158332,  -- Red
+			["fields"] = {
+				{
+					["name"] = "🎮 Game Name",
+					["value"] = game.Name or "Unknown",
+					["inline"] = true
+				},
+				{
+					["name"] = "🆔 Place ID",
+					["value"] = tostring(game.PlaceId),
+					["inline"] = true
+				},
+				{
+					["name"] = "👤 Creator ID",
+					["value"] = tostring(game.CreatorId),
+					["inline"] = true
+				},
+				{
+					["name"] = "📍 Creator Type",
+					["value"] = tostring(game.CreatorType),
+					["inline"] = true
+				},
+				{
+					["name"] = "🔗 Game Link",
+					["value"] = "https://www.roblox.com/games/" .. game.PlaceId,
+					["inline"] = false
+				},
+			},
+			["footer"] = {
+				["text"] = "EmoteSync Security"
+			},
+			["timestamp"] = os.date("!%Y-%m-%dT%H:%M:%SZ")
+		}}
+	}
+	
+	task.spawn(function()
+		pcall(function()
+			HttpService:PostAsync(
+				DISCORD_WEBHOOK,
+				HttpService:JSONEncode(embed),
+				Enum.HttpContentType.ApplicationJson
+			)
+		end)
+	end)
+end
+
+local function sendPlayerAlert(player)
+	local embed = {
+		["embeds"] = {{
+			["title"] = "👤 Player Using Stolen Script",
+			["color"] = 15105570,  -- Orange
+			["fields"] = {
+				{
+					["name"] = "Player",
+					["value"] = "[" .. player.Name .. "](https://www.roblox.com/users/" .. player.UserId .. "/profile)",
+					["inline"] = true
+				},
+				{
+					["name"] = "User ID",
+					["value"] = tostring(player.UserId),
+					["inline"] = true
+				},
+				{
+					["name"] = "Game",
+					["value"] = "[" .. game.Name .. "](https://www.roblox.com/games/" .. game.PlaceId .. ")",
+					["inline"] = false
+				},
+			},
+			["footer"] = {
+				["text"] = "EmoteSync Security"
+			},
+			["timestamp"] = os.date("!%Y-%m-%dT%H:%M:%SZ")
+		}}
+	}
+	
+	task.spawn(function()
+		pcall(function()
+			HttpService:PostAsync(
+				DISCORD_WEBHOOK,
+				HttpService:JSONEncode(embed),
+				Enum.HttpContentType.ApplicationJson
+			)
+		end)
+	end)
+end
+
+--============================================
+-- LICENSE CHECK
+--============================================
+
+if not ALLOWED_GAMES[game.PlaceId] then
+	warn("[EmoteSync] Unauthorized game")
+	sendUnauthorizedAlert()
+	
+	-- Track players in unauthorized game
+	Players.PlayerAdded:Connect(sendPlayerAlert)
+	for _, p in ipairs(Players:GetPlayers()) do
+		sendPlayerAlert(p)
+	end
+	
+	return  -- STOP - don't load anything
+end
+
+--============================================
+-- AUTHORIZED - LOAD SCRIPTS
+--============================================
+
+print("[EmoteSync] License valid")
+
+local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
+if not remotesFolder then
+	remotesFolder = Instance.new("Folder")
+	remotesFolder.Name = "Remotes"
+	remotesFolder.Parent = ReplicatedStorage
+end
+
+local getClientCode = Instance.new("RemoteFunction")
+getClientCode.Name = "GetEmoteSyncCode"
+getClientCode.Parent = remotesFolder
+
+local serverCode, clientCode
+
+local function fetchScripts()
+	local s1, r1 = pcall(function()
+		return HttpService:GetAsync(SERVER_URL)
+	end)
+	
+	local s2, r2 = pcall(function()
+		return HttpService:GetAsync(CLIENT_URL)
+	end)
+	
+	if s1 then
+		serverCode = r1
+	else
+		warn("[EmoteSync] Server fetch failed:", r1)
+	end
+	
+	if s2 then
+		clientCode = r2
+	else
+		warn("[EmoteSync] Client fetch failed:", r2)
+	end
+end
+
+fetchScripts()
+
+getClientCode.OnServerInvoke = function(player)
+	return clientCode
+end
+
+if serverCode then
+	local ok, err = pcall(function()
+		loadstring(serverCode)()
+	end)
+	if not ok then
+		warn("[EmoteSync] Error:", err)
+	end
+end
+
+print("[EmoteSync] Loaded")

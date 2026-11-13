@@ -1,0 +1,17 @@
+{
+	"name": "DigGame",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": {
+			"DigShared": { "$path": "src/shared" }
+		},
+		"ServerScriptService": {
+			"DigServer": { "$path": "src/server" }
+		},
+		"StarterPlayer": {
+			"StarterPlayerScripts": {
+				"DigClient": { "$path": "src/client" }
+			}
+		}
+	}
+}

@@ -1,0 +1,2710 @@
+<roblox version="4">
+<Item class="Folder" referent="RBX0005"><Properties><string name="Name">DigShared</string></Properties><Item class="ModuleScript" referent="RBX0001"><Properties><string name="Name">DigConfig</string><ProtectedString name="Source"><![CDATA[--!strict
+--[[
+	DigConfig - every tunable number for the digging game lives here.
+
+	Lives in ReplicatedStorage.DigShared so the client can read names/prices
+	for UI. The server is still the only thing that *uses* these numbers to
+	decide outcomes.
+]]
+
+export type LayerDef = {
+	Name: string,
+	Top: number, -- depth (studs below surface) where the layer starts
+	Bottom: number, -- depth where it ends
+	Material: Enum.Material,
+	Color: Color3,
+	Hardness: number, -- multiplies stamina cost, shrinks dig radius
+	MinTier: number, -- shovel tier needed to dig it
+	LootCount: number, -- how many buried items this layer keeps stocked
+}
+
+export type ShovelDef = {
+	Name: string,
+	Price: number,
+	Tier: number,
+	Radius: number,
+	Cooldown: number,
+	Stamina: number,
+	Reach: number,
+	BladeColor: Color3,
+	BladeMaterial: Enum.Material,
+}
+
+export type BackpackDef = {
+	Name: string,
+	Price: number,
+	Capacity: number,
+}
+
+export type Rarity = "Common" | "Uncommon" | "Rare" | "Epic" | "Legendary"
+
+export type LootDef = {
+	Id: string,
+	Name: string,
+	Value: number,
+	Weight: number,
+	Rarity: Rarity,
+	Shape: "Block" | "Ball" | "Cylinder" | "Wedge",
+	Size: Vector3,
+	Color: Color3,
+	Material: Enum.Material,
+}
+
+local DigConfig = {}
+
+-- Grid size of Roblox terrain voxels. Don't change.
+DigConfig.VoxelSize = 4
+
+-- Where the dig site goes. If Workspace has a BasePart called "DigZone",
+-- its top face becomes the surface and its X/Z footprint becomes the
+-- diggable area (the part is hidden). Otherwise these defaults are used.
+DigConfig.Area = {
+	Center = Vector3.new(0, 0, 0), -- Y is the surface height
+	SizeX = 192,
+	SizeZ = 192,
+	Depth = 160,
+	Border = 24, -- undiggable ground ring around the pit (sell pad sits here)
+	BedrockThickness = 8,
+	ClearHeight = 60, -- terrain above the surface is cleared this high
+}
+
+DigConfig.GrassDepth = 4
+
+-- Ordered top to bottom; Top/Bottom must be multiples of VoxelSize and
+-- the last Bottom must equal Area.Depth.
+DigConfig.Layers = {
+	{
+		Name = "Topsoil",
+		Top = 0,
+		Bottom = 24,
+		Material = Enum.Material.Ground,
+		Color = Color3.fromRGB(214, 160, 98),
+		Hardness = 1,
+		MinTier = 1,
+		LootCount = 45,
+	},
+	{
+		Name = "Clay",
+		Top = 24,
+		Bottom = 56,
+		Material = Enum.Material.Sandstone,
+		Color = Color3.fromRGB(196, 120, 78),
+		Hardness = 1.4,
+		MinTier = 1,
+		LootCount = 40,
+	},
+	{
+		Name = "Stone",
+		Top = 56,
+		Bottom = 96,
+		Material = Enum.Material.Rock,
+		Color = Color3.fromRGB(128, 124, 120),
+		Hardness = 2,
+		MinTier = 2,
+		LootCount = 35,
+	},
+	{
+		Name = "Deep Slate",
+		Top = 96,
+		Bottom = 136,
+		Material = Enum.Material.Slate,
+		Color = Color3.fromRGB(74, 78, 92),
+		Hardness = 2.8,
+		MinTier = 3,
+		LootCount = 28,
+	},
+	{
+		Name = "Magma Core",
+		Top = 136,
+		Bottom = 160,
+		Material = Enum.Material.CrackedLava,
+		Color = Color3.fromRGB(255, 96, 32),
+		Hardness = 3.6,
+		MinTier = 4,
+		LootCount = 20,
+	},
+} :: { LayerDef }
+
+DigConfig.GrassColor = Color3.fromRGB(110, 200, 60)
+DigConfig.BedrockMaterial = Enum.Material.Basalt
+DigConfig.BedrockColor = Color3.fromRGB(30, 28, 34)
+
+DigConfig.Shovels = {
+	{
+		Name = "Rusty Shovel",
+		Price = 0,
+		Tier = 1,
+		Radius = 4.5,
+		Cooldown = 0.35,
+		Stamina = 4,
+		Reach = 16,
+		BladeColor = Color3.fromRGB(150, 82, 40),
+		BladeMaterial = Enum.Material.CorrodedMetal,
+	},
+	{
+		Name = "Iron Shovel",
+		Price = 150,
+		Tier = 2,
+		Radius = 5.5,
+		Cooldown = 0.3,
+		Stamina = 3.5,
+		Reach = 17,
+		BladeColor = Color3.fromRGB(160, 165, 172),
+		BladeMaterial = Enum.Material.Metal,
+	},
+	{
+		Name = "Steel Shovel",
+		Price = 800,
+		Tier = 3,
+		Radius = 6.5,
+		Cooldown = 0.26,
+		Stamina = 3,
+		Reach = 18,
+		BladeColor = Color3.fromRGB(205, 215, 230),
+		BladeMaterial = Enum.Material.DiamondPlate,
+	},
+	{
+		Name = "Diamond Shovel",
+		Price = 3500,
+		Tier = 4,
+		Radius = 8,
+		Cooldown = 0.22,
+		Stamina = 2.5,
+		Reach = 20,
+		BladeColor = Color3.fromRGB(90, 220, 255),
+		BladeMaterial = Enum.Material.Glass,
+	},
+	{
+		Name = "Mythic Drill",
+		Price = 15000,
+		Tier = 5,
+		Radius = 10,
+		Cooldown = 0.18,
+		Stamina = 2,
+		Reach = 22,
+		BladeColor = Color3.fromRGB(190, 90, 255),
+		BladeMaterial = Enum.Material.Neon,
+	},
+} :: { ShovelDef }
+
+DigConfig.Backpacks = {
+	{ Name = "Pockets", Price = 0, Capacity = 10 },
+	{ Name = "Satchel", Price = 200, Capacity = 20 },
+	{ Name = "Backpack", Price = 1000, Capacity = 35 },
+	{ Name = "Hiking Pack", Price = 4000, Capacity = 60 },
+	{ Name = "Cargo Pack", Price = 12000, Capacity = 100 },
+} :: { BackpackDef }
+
+DigConfig.Stamina = {
+	Max = 100,
+	RegenPerSecond = 14,
+	RegenDelay = 0.6, -- seconds after a dig before regen starts
+}
+
+-- Server tolerances (latency slack on top of the shovel's Reach).
+DigConfig.ReachTolerance = 4
+DigConfig.CooldownTolerance = 0.85 -- accept digs at 85% of the cooldown (ping jitter)
+DigConfig.LootPickupPadding = 2 -- loot this far outside the dig ball is still unearthed
+
+-- Loot detector (the blue diamond marker).
+DigConfig.DetectorRange = 70
+DigConfig.DetectorInterval = 0.5
+
+DigConfig.ExposedLootLifetime = 300
+DigConfig.SurfaceCooldown = 5
+DigConfig.ResetIntervalMinutes = 30 -- 0 disables the automatic dig site reset
+DigConfig.AutosaveSeconds = 120
+DigConfig.DataStoreName = "DigGame_v1"
+DigConfig.RunSelfTestsInStudio = true
+
+DigConfig.RarityColors = {
+	Common = Color3.fromRGB(235, 235, 235),
+	Uncommon = Color3.fromRGB(110, 230, 90),
+	Rare = Color3.fromRGB(70, 160, 255),
+	Epic = Color3.fromRGB(190, 90, 255),
+	Legendary = Color3.fromRGB(255, 190, 40),
+} :: { [Rarity]: Color3 }
+
+-- Loot per layer index (same order as Layers). Weight is relative chance.
+DigConfig.Loot = {
+	{
+		{
+			Id = "rusty_can",
+			Name = "Rusty Can",
+			Value = 3,
+			Weight = 40,
+			Rarity = "Common",
+			Shape = "Cylinder",
+			Size = Vector3.new(1, 0.8, 0.8),
+			Color = Color3.fromRGB(140, 80, 50),
+			Material = Enum.Material.CorrodedMetal,
+		},
+		{
+			Id = "old_bottle",
+			Name = "Old Bottle",
+			Value = 5,
+			Weight = 30,
+			Rarity = "Common",
+			Shape = "Cylinder",
+			Size = Vector3.new(1.4, 0.6, 0.6),
+			Color = Color3.fromRGB(80, 160, 90),
+			Material = Enum.Material.Glass,
+		},
+		{
+			Id = "bone",
+			Name = "Bone",
+			Value = 8,
+			Weight = 20,
+			Rarity = "Uncommon",
+			Shape = "Block",
+			Size = Vector3.new(1.8, 0.4, 0.4),
+			Color = Color3.fromRGB(240, 232, 210),
+			Material = Enum.Material.SmoothPlastic,
+		},
+		{
+			Id = "old_coin",
+			Name = "Old Coin",
+			Value = 15,
+			Weight = 10,
+			Rarity = "Rare",
+			Shape = "Cylinder",
+			Size = Vector3.new(0.2, 1, 1),
+			Color = Color3.fromRGB(200, 150, 60),
+			Material = Enum.Material.Metal,
+		},
+	},
+	{
+		{
+			Id = "clay_pot",
+			Name = "Clay Pot",
+			Value = 20,
+			Weight = 40,
+			Rarity = "Common",
+			Shape = "Ball",
+			Size = Vector3.new(1.4, 1.4, 1.4),
+			Color = Color3.fromRGB(180, 90, 50),
+			Material = Enum.Material.Slate,
+		},
+		{
+			Id = "fossil",
+			Name = "Fossil",
+			Value = 35,
+			Weight = 30,
+			Rarity = "Uncommon",
+			Shape = "Block",
+			Size = Vector3.new(1.6, 0.5, 1.2),
+			Color = Color3.fromRGB(200, 190, 160),
+			Material = Enum.Material.Limestone,
+		},
+		{
+			Id = "silver_coin",
+			Name = "Silver Coin",
+			Value = 45,
+			Weight = 20,
+			Rarity = "Rare",
+			Shape = "Cylinder",
+			Size = Vector3.new(0.2, 1, 1),
+			Color = Color3.fromRGB(210, 215, 225),
+			Material = Enum.Material.Metal,
+		},
+		{
+			Id = "arrowhead",
+			Name = "Arrowhead",
+			Value = 70,
+			Weight = 10,
+			Rarity = "Epic",
+			Shape = "Wedge",
+			Size = Vector3.new(0.3, 1, 1.4),
+			Color = Color3.fromRGB(60, 60, 70),
+			Material = Enum.Material.Slate,
+		},
+	},
+	{
+		{
+			Id = "iron_ore",
+			Name = "Iron Ore",
+			Value = 60,
+			Weight = 40,
+			Rarity = "Common",
+			Shape = "Block",
+			Size = Vector3.new(1.4, 1.2, 1.3),
+			Color = Color3.fromRGB(150, 110, 90),
+			Material = Enum.Material.Rock,
+		},
+		{
+			Id = "gold_nugget",
+			Name = "Gold Nugget",
+			Value = 120,
+			Weight = 30,
+			Rarity = "Uncommon",
+			Shape = "Ball",
+			Size = Vector3.new(1, 1, 1),
+			Color = Color3.fromRGB(255, 200, 40),
+			Material = Enum.Material.Foil,
+		},
+		{
+			Id = "ancient_mask",
+			Name = "Ancient Mask",
+			Value = 200,
+			Weight = 20,
+			Rarity = "Rare",
+			Shape = "Block",
+			Size = Vector3.new(1.4, 1.8, 0.4),
+			Color = Color3.fromRGB(70, 150, 120),
+			Material = Enum.Material.Marble,
+		},
+		{
+			Id = "emerald",
+			Name = "Emerald",
+			Value = 320,
+			Weight = 10,
+			Rarity = "Epic",
+			Shape = "Block",
+			Size = Vector3.new(0.8, 1.2, 0.8),
+			Color = Color3.fromRGB(40, 220, 110),
+			Material = Enum.Material.Glass,
+		},
+	},
+	{
+		{
+			Id = "ruby",
+			Name = "Ruby",
+			Value = 350,
+			Weight = 40,
+			Rarity = "Uncommon",
+			Shape = "Block",
+			Size = Vector3.new(0.9, 1.2, 0.9),
+			Color = Color3.fromRGB(230, 30, 60),
+			Material = Enum.Material.Glass,
+		},
+		{
+			Id = "sapphire",
+			Name = "Sapphire",
+			Value = 450,
+			Weight = 30,
+			Rarity = "Rare",
+			Shape = "Block",
+			Size = Vector3.new(0.9, 1.2, 0.9),
+			Color = Color3.fromRGB(40, 90, 255),
+			Material = Enum.Material.Glass,
+		},
+		{
+			Id = "crown",
+			Name = "Lost Crown",
+			Value = 900,
+			Weight = 20,
+			Rarity = "Epic",
+			Shape = "Cylinder",
+			Size = Vector3.new(0.8, 1.6, 1.6),
+			Color = Color3.fromRGB(255, 205, 60),
+			Material = Enum.Material.Foil,
+		},
+		{
+			Id = "skull_relic",
+			Name = "Crystal Skull",
+			Value = 1500,
+			Weight = 10,
+			Rarity = "Legendary",
+			Shape = "Ball",
+			Size = Vector3.new(1.4, 1.6, 1.4),
+			Color = Color3.fromRGB(190, 240, 255),
+			Material = Enum.Material.Glass,
+		},
+	},
+	{
+		{
+			Id = "magma_shard",
+			Name = "Magma Shard",
+			Value = 1200,
+			Weight = 40,
+			Rarity = "Rare",
+			Shape = "Wedge",
+			Size = Vector3.new(0.8, 1.6, 1.2),
+			Color = Color3.fromRGB(255, 110, 30),
+			Material = Enum.Material.Neon,
+		},
+		{
+			Id = "dragon_egg",
+			Name = "Dragon Egg",
+			Value = 2500,
+			Weight = 30,
+			Rarity = "Epic",
+			Shape = "Ball",
+			Size = Vector3.new(1.4, 1.9, 1.4),
+			Color = Color3.fromRGB(120, 30, 40),
+			Material = Enum.Material.Marble,
+		},
+		{
+			Id = "meteorite",
+			Name = "Meteorite",
+			Value = 4000,
+			Weight = 20,
+			Rarity = "Legendary",
+			Shape = "Ball",
+			Size = Vector3.new(1.6, 1.6, 1.6),
+			Color = Color3.fromRGB(60, 50, 70),
+			Material = Enum.Material.Basalt,
+		},
+		{
+			Id = "golden_idol",
+			Name = "Golden Idol",
+			Value = 7500,
+			Weight = 10,
+			Rarity = "Legendary",
+			Shape = "Block",
+			Size = Vector3.new(1, 2, 1),
+			Color = Color3.fromRGB(255, 215, 80),
+			Material = Enum.Material.Foil,
+		},
+	},
+} :: { { LootDef } }
+
+-- Flat lookup: item id -> definition.
+DigConfig.LootById = {} :: { [string]: LootDef }
+for _, layerLoot in DigConfig.Loot do
+	for _, def in layerLoot do
+		DigConfig.LootById[def.Id] = def
+	end
+end
+
+return DigConfig
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX0002"><Properties><string name="Name">DigLogic</string><ProtectedString name="Source"><![CDATA[--!strict
+--[[
+	DigLogic - pure functions (no Instances, no services) shared by server
+	and client. Kept pure so DigLogicTests can check them in isolation.
+]]
+
+local DigConfig = require(script.Parent.DigConfig)
+
+type LayerDef = DigConfig.LayerDef
+type ShovelDef = DigConfig.ShovelDef
+type BackpackDef = DigConfig.BackpackDef
+type LootDef = DigConfig.LootDef
+
+export type Bounds = {
+	MinX: number,
+	MaxX: number,
+	MinZ: number,
+	MaxZ: number,
+	SurfaceY: number,
+	BottomY: number,
+}
+
+local DigLogic = {}
+
+-- Returns the layer index for a depth below the surface (clamped to the
+-- first/last layer so a point slightly above ground counts as topsoil).
+function DigLogic.getLayerIndex(depth: number): number
+	local layers = DigConfig.Layers
+	if depth < layers[1].Bottom then
+		return 1
+	end
+	for index, layer in layers do
+		if depth >= layer.Top and depth < layer.Bottom then
+			return index
+		end
+	end
+	return #layers
+end
+
+function DigLogic.getLayer(depth: number): LayerDef
+	return DigConfig.Layers[DigLogic.getLayerIndex(depth)]
+end
+
+function DigLogic.canDig(shovel: ShovelDef, layer: LayerDef): boolean
+	return shovel.Tier >= layer.MinTier
+end
+
+-- Harder layers shrink the hole; never below one voxel so a dig always
+-- removes something.
+function DigLogic.effectiveRadius(shovel: ShovelDef, layer: LayerDef): number
+	return math.max(DigConfig.VoxelSize * 0.75, shovel.Radius / math.sqrt(layer.Hardness))
+end
+
+function DigLogic.staminaCost(shovel: ShovelDef, layer: LayerDef): number
+	return shovel.Stamina * layer.Hardness
+end
+
+-- Name of the cheapest shovel that can dig the layer, for "Too hard" hints.
+function DigLogic.requiredShovelName(layer: LayerDef): string
+	for _, shovel in DigConfig.Shovels do
+		if shovel.Tier >= layer.MinTier then
+			return shovel.Name
+		end
+	end
+	return "?"
+end
+
+function DigLogic.getShovel(level: number): ShovelDef
+	local shovels = DigConfig.Shovels
+	return shovels[math.clamp(level, 1, #shovels)]
+end
+
+function DigLogic.getBackpack(level: number): BackpackDef
+	local packs = DigConfig.Backpacks
+	return packs[math.clamp(level, 1, #packs)]
+end
+
+-- Weighted roll from a layer's loot table. `roll` is a number in [0, 1).
+function DigLogic.pickLoot(layerIndex: number, roll: number): LootDef
+	local tableForLayer = DigConfig.Loot[math.clamp(layerIndex, 1, #DigConfig.Loot)]
+	local total = 0
+	for _, def in tableForLayer do
+		total += def.Weight
+	end
+	local target = roll * total
+	local running = 0
+	for _, def in tableForLayer do
+		running += def.Weight
+		if target < running then
+			return def
+		end
+	end
+	return tableForLayer[#tableForLayer]
+end
+
+function DigLogic.sellValue(itemIds: { string }): number
+	local total = 0
+	for _, id in itemIds do
+		local def = DigConfig.LootById[id]
+		if def then
+			total += def.Value
+		end
+	end
+	return total
+end
+
+-- Keep a dig ball of `radius` fully inside the diggable box so it can
+-- never eat the border ring or bedrock.
+function DigLogic.clampDigCenter(center: Vector3, radius: number, bounds: Bounds): Vector3
+	local function clampAxis(value: number, low: number, high: number): number
+		if low > high then
+			return (low + high) / 2
+		end
+		return math.clamp(value, low, high)
+	end
+	return Vector3.new(
+		clampAxis(center.X, bounds.MinX + radius, bounds.MaxX - radius),
+		clampAxis(center.Y, bounds.BottomY + radius, bounds.SurfaceY + radius),
+		clampAxis(center.Z, bounds.MinZ + radius, bounds.MaxZ - radius)
+	)
+end
+
+function DigLogic.isInsideBounds(position: Vector3, bounds: Bounds, padding: number): boolean
+	return position.X >= bounds.MinX - padding
+		and position.X <= bounds.MaxX + padding
+		and position.Z >= bounds.MinZ - padding
+		and position.Z <= bounds.MaxZ + padding
+		and position.Y >= bounds.BottomY - padding
+		and position.Y <= bounds.SurfaceY + padding
+end
+
+function DigLogic.isFiniteVector(v: Vector3): boolean
+	for _, n in { v.X, v.Y, v.Z } do
+		if n ~= n or math.abs(n) > 1e6 then
+			return false
+		end
+	end
+	return true
+end
+
+function DigLogic.formatCash(amount: number): string
+	local whole = math.floor(amount)
+	local text = tostring(whole)
+	local formatted = text:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+	if formatted:sub(1, 1) == "," then
+		formatted = formatted:sub(2)
+	end
+	return "$" .. formatted
+end
+
+return DigLogic
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX0003"><Properties><string name="Name">DigLogicTests</string><ProtectedString name="Source"><![CDATA[--!strict
+--[[
+	DigLogicTests - tiny self-contained test runner for DigLogic and the
+	config tables. The server runs it once on start in Studio
+	(DigConfig.RunSelfTestsInStudio) and prints the result to Output.
+]]
+
+local DigConfig = require(script.Parent.DigConfig)
+local DigLogic = require(script.Parent.DigLogic)
+
+local DigLogicTests = {}
+
+type Case = { name: string, fn: () -> () }
+
+local function expectEq(actual: any, expected: any, label: string)
+	if actual ~= expected then
+		error(string.format("%s: expected %s, got %s", label, tostring(expected), tostring(actual)), 2)
+	end
+end
+
+local function expectTrue(value: boolean, label: string)
+	if not value then
+		error(label .. ": expected true", 2)
+	end
+end
+
+local cases: { Case } = {
+	{
+		name = "layers are contiguous, voxel aligned and reach Area.Depth",
+		fn = function()
+			local previousBottom = 0
+			for i, layer in DigConfig.Layers do
+				expectEq(layer.Top, previousBottom, "layer " .. i .. " top")
+				expectTrue(layer.Bottom > layer.Top, "layer " .. i .. " has thickness")
+				expectEq(layer.Top % DigConfig.VoxelSize, 0, "layer " .. i .. " top aligned")
+				expectEq(layer.Bottom % DigConfig.VoxelSize, 0, "layer " .. i .. " bottom aligned")
+				previousBottom = layer.Bottom
+			end
+			expectEq(previousBottom, DigConfig.Area.Depth, "last layer bottom")
+			expectEq(#DigConfig.Loot, #DigConfig.Layers, "one loot table per layer")
+		end,
+	},
+	{
+		name = "getLayerIndex boundaries",
+		fn = function()
+			expectEq(DigLogic.getLayerIndex(-5), 1, "above surface")
+			expectEq(DigLogic.getLayerIndex(0), 1, "surface")
+			expectEq(DigLogic.getLayerIndex(23.9), 1, "just above clay")
+			expectEq(DigLogic.getLayerIndex(24), 2, "clay top")
+			expectEq(DigLogic.getLayerIndex(159), #DigConfig.Layers, "deepest")
+			expectEq(DigLogic.getLayerIndex(9999), #DigConfig.Layers, "below bottom clamps")
+		end,
+	},
+	{
+		name = "shovel tiers gate hard layers",
+		fn = function()
+			local rusty = DigLogic.getShovel(1)
+			expectTrue(DigLogic.canDig(rusty, DigConfig.Layers[1]), "rusty digs topsoil")
+			expectTrue(not DigLogic.canDig(rusty, DigConfig.Layers[3]), "rusty can't dig stone")
+			expectEq(DigLogic.requiredShovelName(DigConfig.Layers[3]), "Iron Shovel", "stone needs iron")
+			local best = DigLogic.getShovel(#DigConfig.Shovels)
+			for _, layer in DigConfig.Layers do
+				expectTrue(DigLogic.canDig(best, layer), "best shovel digs " .. layer.Name)
+			end
+		end,
+	},
+	{
+		name = "upgrade tables are priced in ascending order",
+		fn = function()
+			for i = 2, #DigConfig.Shovels do
+				expectTrue(DigConfig.Shovels[i].Price > DigConfig.Shovels[i - 1].Price, "shovel price " .. i)
+			end
+			for i = 2, #DigConfig.Backpacks do
+				expectTrue(DigConfig.Backpacks[i].Capacity > DigConfig.Backpacks[i - 1].Capacity, "pack size " .. i)
+			end
+			expectEq(DigLogic.getShovel(0).Name, DigConfig.Shovels[1].Name, "level 0 clamps")
+			expectEq(DigLogic.getShovel(99).Name, DigConfig.Shovels[#DigConfig.Shovels].Name, "level 99 clamps")
+		end,
+	},
+	{
+		name = "radius never drops below a voxel and cost scales with hardness",
+		fn = function()
+			local rusty = DigLogic.getShovel(1)
+			for _, layer in DigConfig.Layers do
+				expectTrue(
+					DigLogic.effectiveRadius(rusty, layer) >= DigConfig.VoxelSize * 0.75,
+					"radius in " .. layer.Name
+				)
+			end
+			expectTrue(
+				DigLogic.staminaCost(rusty, DigConfig.Layers[2]) > DigLogic.staminaCost(rusty, DigConfig.Layers[1]),
+				"clay costs more than topsoil"
+			)
+		end,
+	},
+	{
+		name = "pickLoot covers the whole roll range",
+		fn = function()
+			for layerIndex, lootTable in DigConfig.Loot do
+				expectEq(DigLogic.pickLoot(layerIndex, 0).Id, lootTable[1].Id, "roll 0")
+				expectEq(DigLogic.pickLoot(layerIndex, 0.999999).Id, lootTable[#lootTable].Id, "roll ~1")
+			end
+		end,
+	},
+	{
+		name = "sellValue ignores unknown ids",
+		fn = function()
+			expectEq(DigLogic.sellValue({ "rusty_can", "bone", "not_real" }), 11, "sum")
+			expectEq(DigLogic.sellValue({}), 0, "empty")
+		end,
+	},
+	{
+		name = "clampDigCenter keeps the ball inside the pit",
+		fn = function()
+			local bounds = { MinX = 0, MaxX = 100, MinZ = 0, MaxZ = 100, SurfaceY = 0, BottomY = -160 }
+			local c = DigLogic.clampDigCenter(Vector3.new(-50, -500, 200), 5, bounds)
+			expectEq(c.X, 5, "x")
+			expectEq(c.Y, -155, "y")
+			expectEq(c.Z, 95, "z")
+		end,
+	},
+	{
+		name = "formatCash and isFiniteVector",
+		fn = function()
+			expectEq(DigLogic.formatCash(12), "$12", "small")
+			expectEq(DigLogic.formatCash(1500), "$1,500", "thousands")
+			expectEq(DigLogic.formatCash(123456), "$123,456", "six digits")
+			expectTrue(not DigLogic.isFiniteVector(Vector3.new(0 / 0, 0, 0)), "nan")
+			expectTrue(not DigLogic.isFiniteVector(Vector3.new(math.huge, 0, 0)), "inf")
+			expectTrue(DigLogic.isFiniteVector(Vector3.new(1, 2, 3)), "normal")
+		end,
+	},
+}
+
+function DigLogicTests.run(): (number, number)
+	local passed, failed = 0, 0
+	for _, case in cases do
+		local ok, err = pcall(case.fn)
+		if ok then
+			passed += 1
+		else
+			failed += 1
+			warn("[DigTests] FAIL " .. case.name .. " -> " .. tostring(err))
+		end
+	end
+	if failed == 0 then
+		print(string.format("[DigTests] all %d tests passed", passed))
+	else
+		warn(string.format("[DigTests] %d passed, %d FAILED", passed, failed))
+	end
+	return passed, failed
+end
+
+return DigLogicTests
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX0004"><Properties><string name="Name">LootVisuals</string><ProtectedString name="Source"><![CDATA[--!strict
+--[[
+	LootVisuals - builds the Part used to show a loot item. Used by the server
+	for exposed loot and by the client for the "pop out of the ground" effect,
+	so both look identical.
+]]
+
+local DigConfig = require(script.Parent.DigConfig)
+
+local LootVisuals = {}
+
+function LootVisuals.build(def: DigConfig.LootDef): BasePart
+	local part: BasePart
+	if def.Shape == "Wedge" then
+		part = Instance.new("WedgePart")
+	else
+		local p = Instance.new("Part")
+		p.Shape = if def.Shape == "Ball"
+			then Enum.PartType.Ball
+			elseif def.Shape == "Cylinder" then Enum.PartType.Cylinder
+			else Enum.PartType.Block
+		part = p
+	end
+	part.Name = def.Name
+	part.Size = def.Size
+	part.Color = def.Color
+	part.Material = def.Material
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanTouch = false
+	part.CastShadow = true
+	part:SetAttribute("LootId", def.Id)
+
+	local rarityColor = DigConfig.RarityColors[def.Rarity]
+	if def.Rarity ~= "Common" then
+		local light = Instance.new("PointLight")
+		light.Color = rarityColor
+		light.Range = 8
+		light.Brightness = 1.5
+		light.Parent = part
+	end
+
+	local sparkle = Instance.new("Attachment")
+	sparkle.Name = "FxAttachment"
+	sparkle.Parent = part
+
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Name = "Sparkle"
+	emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	emitter.Color = ColorSequence.new(rarityColor)
+	emitter.LightEmission = 1
+	emitter.Size = NumberSequence.new(0.35, 0)
+	emitter.Lifetime = NumberRange.new(0.6, 1)
+	emitter.Speed = NumberRange.new(1, 2)
+	emitter.SpreadAngle = Vector2.new(180, 180)
+	emitter.Rate = if def.Rarity == "Common" then 2 else 8
+	emitter.Parent = sparkle
+
+	return part
+end
+
+return LootVisuals
+]]></ProtectedString></Properties></Item></Item>
+<Item class="Folder" referent="RBX0010"><Properties><string name="Name">DigServer</string></Properties><Item class="ModuleScript" referent="RBX0006"><Properties><string name="Name">DigService</string><ProtectedString name="Source"><![CDATA[--!strict
+--[[
+	DigService - server-authoritative digging gameplay.
+
+	Remotes (ReplicatedStorage.DigRemotes):
+	  Dig          client -> server  (hitPosition: Vector3, hitNormal: Vector3)
+	  Surface      client -> server  ()                      teleport out of the pit
+	  BuyUpgrade   client -> server  RemoteFunction(kind: "Shovel" | "Backpack") -> (ok, message)
+	  DigFx        server -> all     (center: Vector3, radius: number, color: Color3)
+	  Notify       server -> client  (payload: NotifyPayload)
+	  LootHint     server -> client  (position: Vector3?, rarity: string?)
+
+	Player state the HUD shows is replicated with Player attributes, so a
+	late-joining or respawning client always sees the current values.
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local Shared = ReplicatedStorage:WaitForChild("DigShared")
+local DigConfig = require(Shared:WaitForChild("DigConfig"))
+local DigLogic = require(Shared:WaitForChild("DigLogic"))
+local DigWorld = require(script.Parent.DigWorld)
+local PlayerData = require(script.Parent.PlayerData)
+
+type LootDef = DigConfig.LootDef
+
+type State = {
+	Stamina: number,
+	LastDig: number,
+	LastWarn: number,
+	LastSell: number,
+	LastSurface: number,
+	LastBuy: number,
+	HintId: number,
+}
+
+local DigService = {}
+
+local states: { [Player]: State } = {}
+local terrain = Workspace.Terrain
+
+local remotes: Folder
+local digEvent: RemoteEvent
+local surfaceEvent: RemoteEvent
+local buyFunction: RemoteFunction
+local fxEvent: RemoteEvent
+local notifyEvent: RemoteEvent
+local hintEvent: RemoteEvent
+
+local surfacePoint = Vector3.zero
+
+--------------------------------------------------------------------------
+-- Helpers
+--------------------------------------------------------------------------
+
+local function makeRemote(className: string, name: string): Instance
+	local remote = Instance.new(className)
+	remote.Name = name
+	remote.Parent = remotes
+	return remote
+end
+
+local function notify(player: Player, text: string, color: Color3?)
+	notifyEvent:FireClient(player, { Text = text, Color = color })
+end
+
+-- Throttled warnings so holding the mouse on rock doesn't spam the HUD.
+local function warnPlayer(player: Player, text: string)
+	local state = states[player]
+	if not state then
+		return
+	end
+	local now = os.clock()
+	if now - state.LastWarn < 1.5 then
+		return
+	end
+	state.LastWarn = now
+	notify(player, text, Color3.fromRGB(255, 110, 90))
+end
+
+local function getAliveRoot(player: Player): BasePart?
+	local character = player.Character
+	if not character then
+		return nil
+	end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not humanoid or humanoid.Health <= 0 or not root or not root:IsA("BasePart") then
+		return nil
+	end
+	return root
+end
+
+local function syncAttributes(player: Player)
+	local profile = PlayerData.get(player)
+	local state = states[player]
+	if not profile or not state then
+		return
+	end
+	local shovel = DigLogic.getShovel(profile.ShovelLevel)
+	local pack = DigLogic.getBackpack(profile.BackpackLevel)
+	player:SetAttribute("Cash", profile.Cash)
+	player:SetAttribute("ShovelLevel", profile.ShovelLevel)
+	player:SetAttribute("ShovelName", shovel.Name)
+	player:SetAttribute("BackpackLevel", profile.BackpackLevel)
+	player:SetAttribute("BackpackCount", #profile.Backpack)
+	player:SetAttribute("BackpackMax", pack.Capacity)
+	player:SetAttribute("Stamina", math.floor(state.Stamina))
+	player:SetAttribute("MaxStamina", DigConfig.Stamina.Max)
+	player:SetAttribute("DataSaving", PlayerData.isSaving(player))
+
+	local leaderstats = player:FindFirstChild("leaderstats")
+	local cashValue = leaderstats and leaderstats:FindFirstChild("Cash")
+	if cashValue and cashValue:IsA("IntValue") then
+		cashValue.Value = profile.Cash
+	end
+end
+
+--------------------------------------------------------------------------
+-- Shovel tool
+--------------------------------------------------------------------------
+
+local function weldTo(handle: BasePart, part: BasePart)
+	local weld = Instance.new("Weld")
+	weld.Part0 = handle
+	weld.Part1 = part
+	weld.C0 = handle.CFrame:Inverse() * part.CFrame
+	weld.Parent = part
+end
+
+local function buildShovel(def: DigConfig.ShovelDef): Tool
+	local tool = Instance.new("Tool")
+	tool.Name = def.Name
+	tool.ToolTip = "Click the ground to dig"
+	tool.CanBeDropped = false
+	tool.RequiresHandle = true
+	tool:SetAttribute("DigTool", true)
+	-- Hold the rear end of the shaft, blade pointing forward and down.
+	tool.Grip = CFrame.new(0, -1.6, 0) * CFrame.Angles(math.rad(25), 0, 0)
+
+	local handle = Instance.new("Part")
+	handle.Name = "Handle"
+	handle.Size = Vector3.new(0.35, 4.4, 0.35)
+	handle.Color = Color3.fromRGB(150, 98, 56)
+	handle.Material = Enum.Material.Wood
+	handle.CanCollide = false
+	handle.Massless = true
+	handle.CFrame = CFrame.new()
+	handle.Parent = tool
+
+	local grip = Instance.new("Part")
+	grip.Name = "GripBar"
+	grip.Size = Vector3.new(1.1, 0.3, 0.3)
+	grip.Color = handle.Color
+	grip.Material = Enum.Material.Wood
+	grip.CanCollide = false
+	grip.Massless = true
+	grip.CFrame = CFrame.new(0, -2.25, 0)
+	grip.Parent = tool
+	weldTo(handle, grip)
+
+	local blade = Instance.new("Part")
+	blade.Name = "Blade"
+	blade.Size = Vector3.new(1.3, 1.7, 0.15)
+	blade.Color = def.BladeColor
+	blade.Material = def.BladeMaterial
+	blade.CanCollide = false
+	blade.Massless = true
+	blade.CFrame = CFrame.new(0, 2.9, 0)
+	blade.Parent = tool
+	weldTo(handle, blade)
+
+	return tool
+end
+
+local function giveShovel(player: Player)
+	local profile = PlayerData.get(player)
+	if not profile then
+		return
+	end
+	local character = player.Character
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	local wasEquipped = false
+	for _, container in { character, backpack } do
+		if container then
+			for _, child in container:GetChildren() do
+				if child:IsA("Tool") and child:GetAttribute("DigTool") then
+					wasEquipped = wasEquipped or child.Parent == character
+					child:Destroy()
+				end
+			end
+		end
+	end
+
+	local tool = buildShovel(DigLogic.getShovel(profile.ShovelLevel))
+	if wasEquipped and character then
+		tool.Parent = character
+	elseif backpack then
+		tool.Parent = backpack
+	end
+end
+
+--------------------------------------------------------------------------
+-- Loot
+--------------------------------------------------------------------------
+
+local function addToBackpack(player: Player, def: LootDef, fromPosition: Vector3): boolean
+	local profile = PlayerData.get(player)
+	if not profile then
+		return false
+	end
+	if #profile.Backpack >= DigLogic.getBackpack(profile.BackpackLevel).Capacity then
+		return false
+	end
+	table.insert(profile.Backpack, def.Id)
+	profile.TotalFound += 1
+	notifyEvent:FireClient(player, {
+		Text = string.format("+ %s (%s)", def.Name, DigLogic.formatCash(def.Value)),
+		Color = DigConfig.RarityColors[def.Rarity],
+		LootId = def.Id,
+		Position = fromPosition,
+	})
+	return true
+end
+
+local function onExposedPickup(player: Player, def: LootDef, part: BasePart)
+	local root = getAliveRoot(player)
+	if not root or (root.Position - part.Position).Magnitude > 16 then
+		return
+	end
+	if addToBackpack(player, def, part.Position) then
+		part:Destroy()
+		syncAttributes(player)
+	else
+		warnPlayer(player, "Backpack full! Sell your loot at the pad.")
+	end
+end
+
+--------------------------------------------------------------------------
+-- Remote handlers (rate limit -> types -> ranges -> plausibility -> mutate)
+--------------------------------------------------------------------------
+
+local function onDig(player: Player, position: unknown, normal: unknown)
+	local state = states[player]
+	local profile = PlayerData.get(player)
+	if not state or not profile then
+		return
+	end
+
+	local shovel = DigLogic.getShovel(profile.ShovelLevel)
+	local now = os.clock()
+	if now - state.LastDig < shovel.Cooldown * DigConfig.CooldownTolerance then
+		return
+	end
+
+	if typeof(position) ~= "Vector3" or typeof(normal) ~= "Vector3" then
+		return
+	end
+	if not DigLogic.isFiniteVector(position) or not DigLogic.isFiniteVector(normal) then
+		return
+	end
+
+	local root = getAliveRoot(player)
+	local character = player.Character
+	if not root or not character then
+		return
+	end
+	local tool = character:FindFirstChildOfClass("Tool")
+	if not tool or not tool:GetAttribute("DigTool") then
+		return
+	end
+	if (position - root.Position).Magnitude > shovel.Reach + DigConfig.ReachTolerance then
+		return
+	end
+
+	local bounds = DigWorld.getBounds()
+	if not DigLogic.isInsideBounds(position, bounds, 2) then
+		warnPlayer(player, "You can only dig inside the dig site.")
+		return
+	end
+
+	local inward = if normal.Magnitude > 0.5 then -normal.Unit else -Vector3.yAxis
+	local layer = DigLogic.getLayer(bounds.SurfaceY - (position + inward).Y)
+	if not DigLogic.canDig(shovel, layer) then
+		warnPlayer(
+			player,
+			string.format("%s is too hard! You need a %s.", layer.Name, DigLogic.requiredShovelName(layer))
+		)
+		return
+	end
+
+	local cost = DigLogic.staminaCost(shovel, layer)
+	if state.Stamina < cost then
+		warnPlayer(player, "Too tired! Catch your breath.")
+		return
+	end
+
+	local radius = DigLogic.effectiveRadius(shovel, layer)
+	local center = DigLogic.clampDigCenter(position + inward * (radius * 0.45), radius, bounds)
+	if not DigWorld.isSolidNear(center, radius * 0.75) then
+		return
+	end
+
+	state.LastDig = now
+	state.Stamina -= cost
+	terrain:FillBall(center, radius, Enum.Material.Air)
+	fxEvent:FireAllClients(center, radius, layer.Color)
+
+	local warnedFull = false
+	for _, loot in DigWorld.collectInSphere(center, radius) do
+		if not addToBackpack(player, loot.Def, loot.Position) then
+			DigWorld.exposeLoot(loot, onExposedPickup)
+			if not warnedFull then
+				warnedFull = true
+				warnPlayer(player, "Backpack full! Sell your loot at the pad.")
+			end
+		end
+	end
+
+	syncAttributes(player)
+end
+
+local function onBuyUpgrade(player: Player, kind: unknown): (boolean, string)
+	local state = states[player]
+	local profile = PlayerData.get(player)
+	if not state or not profile then
+		return false, "Still loading..."
+	end
+	local now = os.clock()
+	if now - state.LastBuy < 0.3 then
+		return false, "Slow down!"
+	end
+	state.LastBuy = now
+
+	if kind ~= "Shovel" and kind ~= "Backpack" then
+		return false, "Unknown upgrade"
+	end
+
+	local list: { { Name: string, Price: number } } = if kind == "Shovel"
+		then DigConfig.Shovels
+		else DigConfig.Backpacks
+	local currentLevel = if kind == "Shovel" then profile.ShovelLevel else profile.BackpackLevel
+	local nextDef = list[currentLevel + 1]
+	if not nextDef then
+		return false, "Already maxed out!"
+	end
+	if profile.Cash < nextDef.Price then
+		return false, string.format("Need %s more", DigLogic.formatCash(nextDef.Price - profile.Cash))
+	end
+
+	profile.Cash -= nextDef.Price
+	if kind == "Shovel" then
+		profile.ShovelLevel = currentLevel + 1
+		giveShovel(player)
+	else
+		profile.BackpackLevel = currentLevel + 1
+	end
+	syncAttributes(player)
+	return true, "Unlocked " .. nextDef.Name .. "!"
+end
+
+local function onSurface(player: Player)
+	local state = states[player]
+	if not state then
+		return
+	end
+	local now = os.clock()
+	if now - state.LastSurface < DigConfig.SurfaceCooldown then
+		warnPlayer(player, string.format("Wait %ds", math.ceil(DigConfig.SurfaceCooldown - (now - state.LastSurface))))
+		return
+	end
+	local root = getAliveRoot(player)
+	local character = player.Character
+	if not root or not character then
+		return
+	end
+	state.LastSurface = now
+	local offset = Vector3.new(math.random(-4, 4), 0, math.random(-4, 4))
+	character:PivotTo(CFrame.new(surfacePoint + offset))
+end
+
+local function sell(player: Player)
+	local state = states[player]
+	local profile = PlayerData.get(player)
+	if not state or not profile then
+		return
+	end
+	local now = os.clock()
+	if now - state.LastSell < 1 then
+		return
+	end
+	state.LastSell = now
+	if #profile.Backpack == 0 then
+		warnPlayer(player, "Nothing to sell. Go dig!")
+		return
+	end
+	local count = #profile.Backpack
+	local value = DigLogic.sellValue(profile.Backpack)
+	profile.Cash += value
+	table.clear(profile.Backpack)
+	notify(
+		player,
+		string.format("Sold %d item%s for %s!", count, if count == 1 then "" else "s", DigLogic.formatCash(value)),
+		Color3.fromRGB(90, 255, 120)
+	)
+	syncAttributes(player)
+end
+
+--------------------------------------------------------------------------
+-- World setup
+--------------------------------------------------------------------------
+
+local function setupSellPad()
+	local bounds = DigWorld.getBounds()
+	local borderMid = bounds.MaxX + DigConfig.Area.Border / 2
+	local centerZ = (bounds.MinZ + bounds.MaxZ) / 2
+	surfacePoint = Vector3.new(borderMid, bounds.SurfaceY + 4, centerZ - 10)
+
+	local pad = Workspace:FindFirstChild("SellPad")
+	if not (pad and pad:IsA("BasePart")) then
+		local newPad = Instance.new("Part")
+		newPad.Name = "SellPad"
+		newPad.Anchored = true
+		newPad.Size = Vector3.new(12, 1, 12)
+		newPad.Position = Vector3.new(borderMid, bounds.SurfaceY + 0.5, centerZ + 8)
+		newPad.Color = Color3.fromRGB(70, 220, 110)
+		newPad.Material = Enum.Material.Neon
+		newPad.TopSurface = Enum.SurfaceType.Smooth
+
+		local billboard = Instance.new("BillboardGui")
+		billboard.Size = UDim2.fromOffset(200, 60)
+		billboard.StudsOffset = Vector3.new(0, 4, 0)
+		billboard.AlwaysOnTop = true
+		billboard.MaxDistance = 250
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.fromScale(1, 1)
+		label.BackgroundTransparency = 1
+		label.Text = "SELL LOOT"
+		label.TextScaled = true
+		label.TextColor3 = Color3.new(1, 1, 1)
+		label.FontFace = Font.fromEnum(Enum.Font.FredokaOne)
+		local stroke = Instance.new("UIStroke")
+		stroke.Thickness = 3
+		stroke.Color = Color3.fromRGB(20, 90, 40)
+		stroke.Parent = label
+		label.Parent = billboard
+		billboard.Parent = newPad
+
+		newPad.Parent = Workspace
+		pad = newPad
+	end
+
+	local sellPad = pad :: BasePart
+	sellPad.Touched:Connect(function(hit)
+		local character = hit.Parent
+		local player = character and Players:GetPlayerFromCharacter(character)
+		if player then
+			sell(player)
+		end
+	end)
+end
+
+local function teleportPlayersOutOfPit()
+	local bounds = DigWorld.getBounds()
+	for player in states do
+		local root = getAliveRoot(player)
+		local character = player.Character
+		if
+			root
+			and character
+			and root.Position.Y < bounds.SurfaceY + 2
+			and DigLogic.isInsideBounds(root.Position, bounds, 4)
+		then
+			character:PivotTo(CFrame.new(surfacePoint + Vector3.new(math.random(-6, 6), 0, math.random(-6, 6))))
+		end
+	end
+end
+
+--------------------------------------------------------------------------
+-- QA commands (Studio, or the place owner): /cash 500  /fill  /maxshovel  /resetdig
+--------------------------------------------------------------------------
+
+local function isTester(player: Player): boolean
+	return RunService:IsStudio() or (game.CreatorType == Enum.CreatorType.User and player.UserId == game.CreatorId)
+end
+
+local function onChatted(player: Player, message: string)
+	if not isTester(player) then
+		return
+	end
+	local profile = PlayerData.get(player)
+	local state = states[player]
+	if not profile or not state then
+		return
+	end
+	local command, arg = string.match(message, "^/(%w+)%s*(%S*)")
+	if command == "cash" then
+		profile.Cash += math.clamp(tonumber(arg) or 1000, 0, 1e9)
+	elseif command == "fill" then
+		local capacity = DigLogic.getBackpack(profile.BackpackLevel).Capacity
+		while #profile.Backpack < capacity do
+			table.insert(profile.Backpack, DigLogic.pickLoot(math.random(1, #DigConfig.Layers), math.random()).Id)
+		end
+	elseif command == "maxshovel" then
+		profile.ShovelLevel = #DigConfig.Shovels
+		giveShovel(player)
+	elseif command == "stamina" then
+		state.Stamina = DigConfig.Stamina.Max
+	elseif command == "resetdig" then
+		teleportPlayersOutOfPit()
+		DigWorld.reset()
+	else
+		return
+	end
+	notify(player, "[QA] " .. command .. " done", Color3.fromRGB(255, 220, 80))
+	syncAttributes(player)
+end
+
+--------------------------------------------------------------------------
+-- Player lifecycle
+--------------------------------------------------------------------------
+
+local function onPlayerAdded(player: Player)
+	local leaderstats = Instance.new("Folder")
+	leaderstats.Name = "leaderstats"
+	local cash = Instance.new("IntValue")
+	cash.Name = "Cash"
+	cash.Parent = leaderstats
+	leaderstats.Parent = player
+
+	PlayerData.load(player)
+	if not player.Parent then
+		PlayerData.release(player)
+		return
+	end
+
+	states[player] = {
+		Stamina = DigConfig.Stamina.Max,
+		LastDig = 0,
+		LastWarn = 0,
+		LastSell = 0,
+		LastSurface = 0,
+		LastBuy = 0,
+		HintId = 0,
+	}
+	syncAttributes(player)
+
+	player.CharacterAdded:Connect(function()
+		giveShovel(player)
+	end)
+	if player.Character then
+		giveShovel(player)
+	end
+	player.Chatted:Connect(function(message)
+		onChatted(player, message)
+	end)
+
+	if not PlayerData.isSaving(player) then
+		notify(player, "Progress won't save this session (DataStore unavailable).", Color3.fromRGB(255, 200, 80))
+	end
+end
+
+--------------------------------------------------------------------------
+-- Init / start
+--------------------------------------------------------------------------
+
+function DigService.init()
+	remotes = Instance.new("Folder")
+	remotes.Name = "DigRemotes"
+	digEvent = makeRemote("RemoteEvent", "Dig") :: RemoteEvent
+	surfaceEvent = makeRemote("RemoteEvent", "Surface") :: RemoteEvent
+	buyFunction = makeRemote("RemoteFunction", "BuyUpgrade") :: RemoteFunction
+	fxEvent = makeRemote("RemoteEvent", "DigFx") :: RemoteEvent
+	notifyEvent = makeRemote("RemoteEvent", "Notify") :: RemoteEvent
+	hintEvent = makeRemote("RemoteEvent", "LootHint") :: RemoteEvent
+
+	local bounds = DigWorld.getBounds()
+	remotes:SetAttribute("SurfaceY", bounds.SurfaceY)
+	remotes:SetAttribute("MinX", bounds.MinX)
+	remotes:SetAttribute("MaxX", bounds.MaxX)
+	remotes:SetAttribute("MinZ", bounds.MinZ)
+	remotes:SetAttribute("MaxZ", bounds.MaxZ)
+	remotes:SetAttribute("BottomY", bounds.BottomY)
+	remotes.Parent = ReplicatedStorage
+
+	digEvent.OnServerEvent:Connect(onDig)
+	surfaceEvent.OnServerEvent:Connect(onSurface)
+	buyFunction.OnServerInvoke = onBuyUpgrade
+
+	setupSellPad()
+end
+
+function DigService.start()
+	Players.PlayerAdded:Connect(onPlayerAdded)
+	for _, player in Players:GetPlayers() do
+		task.spawn(onPlayerAdded, player)
+	end
+	Players.PlayerRemoving:Connect(function(player)
+		states[player] = nil
+	end)
+
+	-- Stamina regen (server-authoritative; attribute only updates when it changes).
+	local accumulator = 0
+	RunService.Heartbeat:Connect(function(dt)
+		accumulator += dt
+		if accumulator < 0.1 then
+			return
+		end
+		local step = accumulator
+		accumulator = 0
+		local now = os.clock()
+		local max = DigConfig.Stamina.Max
+		for player, state in states do
+			if state.Stamina < max and now - state.LastDig >= DigConfig.Stamina.RegenDelay then
+				local before = math.floor(state.Stamina)
+				state.Stamina = math.min(max, state.Stamina + DigConfig.Stamina.RegenPerSecond * step)
+				local after = math.floor(state.Stamina)
+				if after ~= before then
+					player:SetAttribute("Stamina", after)
+				end
+			end
+		end
+	end)
+
+	-- Loot detector: each player only ever learns about their nearest item.
+	task.spawn(function()
+		while true do
+			task.wait(DigConfig.DetectorInterval)
+			for player, state in states do
+				local root = getAliveRoot(player)
+				local loot = if root then DigWorld.nearestLoot(root.Position, DigConfig.DetectorRange) else nil
+				local id = if loot then loot.Id else 0
+				if id ~= state.HintId then
+					state.HintId = id
+					if loot then
+						hintEvent:FireClient(player, loot.Position, loot.Def.Rarity)
+					else
+						hintEvent:FireClient(player, nil, nil)
+					end
+				end
+			end
+		end
+	end)
+
+	-- Keep the ground stocked with loot.
+	task.spawn(function()
+		while true do
+			task.wait(20)
+			DigWorld.restockLoot()
+		end
+	end)
+
+	-- Periodic full reset so the pit doesn't end up hollow.
+	if DigConfig.ResetIntervalMinutes > 0 then
+		task.spawn(function()
+			while true do
+				task.wait(math.max(60, DigConfig.ResetIntervalMinutes * 60 - 30))
+				for player in states do
+					notify(player, "The dig site resets in 30 seconds!", Color3.fromRGB(255, 200, 80))
+				end
+				task.wait(30)
+				teleportPlayersOutOfPit()
+				DigWorld.reset()
+				for player in states do
+					notify(player, "Fresh ground! New loot is buried.", Color3.fromRGB(120, 220, 255))
+				end
+			end
+		end)
+	end
+end
+
+return DigService
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX0007"><Properties><string name="Name">DigWorld</string><ProtectedString name="Source"><![CDATA[--!strict
+--[[
+	DigWorld - owns the terrain pit and all buried loot.
+
+	Buried loot exists only as data on the server (no Instance), so exploiters
+	can't scan Workspace for it. An item becomes a Part only when a dig
+	uncovers it and the finder's backpack is full.
+]]
+
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("DigShared")
+local DigConfig = require(Shared:WaitForChild("DigConfig"))
+local DigLogic = require(Shared:WaitForChild("DigLogic"))
+local LootVisuals = require(Shared:WaitForChild("LootVisuals"))
+
+type Bounds = DigLogic.Bounds
+type LootDef = DigConfig.LootDef
+
+export type BuriedLoot = {
+	Id: number,
+	Def: LootDef,
+	Position: Vector3,
+	LayerIndex: number,
+}
+
+local VOXEL = DigConfig.VoxelSize
+local CHUNK = 64
+
+local DigWorld = {}
+
+local terrain = Workspace.Terrain
+local rng = Random.new()
+local bounds: Bounds
+local buried: { [number]: BuriedLoot } = {}
+local layerCounts: { number } = {}
+local nextLootId = 0
+
+local exposedFolder = Instance.new("Folder")
+exposedFolder.Name = "ExposedLoot"
+exposedFolder.Parent = Workspace
+
+local function snapDown(n: number): number
+	return math.floor(n / VOXEL) * VOXEL
+end
+
+local function snapUp(n: number): number
+	return math.ceil(n / VOXEL) * VOXEL
+end
+
+local function resolveBounds(): Bounds
+	local area = DigConfig.Area
+	local center = area.Center
+	local sizeX, sizeZ = area.SizeX, area.SizeZ
+	local surfaceY = center.Y
+
+	local zone = Workspace:FindFirstChild("DigZone")
+	if zone and zone:IsA("BasePart") then
+		center = zone.Position
+		sizeX, sizeZ = zone.Size.X, zone.Size.Z
+		surfaceY = zone.Position.Y + zone.Size.Y / 2
+		zone.Transparency = 1
+		zone.CanCollide = false
+		zone.CanQuery = false
+		zone.CanTouch = false
+		zone.Anchored = true
+	end
+
+	local minX = snapDown(center.X - sizeX / 2)
+	local minZ = snapDown(center.Z - sizeZ / 2)
+	local snappedSurface = snapDown(surfaceY)
+	return {
+		MinX = minX,
+		MaxX = minX + snapUp(sizeX),
+		MinZ = minZ,
+		MaxZ = minZ + snapUp(sizeZ),
+		SurfaceY = snappedSurface,
+		BottomY = snappedSurface - area.Depth,
+	}
+end
+
+-- FillBlock in 64-stud columns so huge regions never hit terrain limits.
+local function fillBox(minCorner: Vector3, maxCorner: Vector3, material: Enum.Material)
+	local x = minCorner.X
+	while x < maxCorner.X do
+		local x2 = math.min(x + CHUNK, maxCorner.X)
+		local z = minCorner.Z
+		while z < maxCorner.Z do
+			local z2 = math.min(z + CHUNK, maxCorner.Z)
+			local lo = Vector3.new(x, minCorner.Y, z)
+			local hi = Vector3.new(x2, maxCorner.Y, z2)
+			terrain:FillBlock(CFrame.new((lo + hi) / 2), hi - lo, material)
+			z = z2
+		end
+		x = x2
+		task.wait()
+	end
+end
+
+function DigWorld.getBounds(): Bounds
+	return bounds
+end
+
+function DigWorld.generateTerrain()
+	local area = DigConfig.Area
+	local border = snapUp(area.Border)
+	local minX, maxX = bounds.MinX - border, bounds.MaxX + border
+	local minZ, maxZ = bounds.MinZ - border, bounds.MaxZ + border
+	local surface = bounds.SurfaceY
+
+	for _, layer in DigConfig.Layers do
+		pcall(function()
+			terrain:SetMaterialColor(layer.Material, layer.Color)
+		end)
+	end
+	pcall(function()
+		terrain:SetMaterialColor(Enum.Material.Grass, DigConfig.GrassColor)
+		terrain:SetMaterialColor(DigConfig.BedrockMaterial, DigConfig.BedrockColor)
+	end)
+
+	fillBox(
+		Vector3.new(minX, surface, minZ),
+		Vector3.new(maxX, surface + snapUp(area.ClearHeight), maxZ),
+		Enum.Material.Air
+	)
+	for index, layer in DigConfig.Layers do
+		local top = surface - layer.Top
+		if index == 1 then
+			fillBox(
+				Vector3.new(minX, top - DigConfig.GrassDepth, minZ),
+				Vector3.new(maxX, top, maxZ),
+				Enum.Material.Grass
+			)
+			top -= DigConfig.GrassDepth
+		end
+		fillBox(Vector3.new(minX, surface - layer.Bottom, minZ), Vector3.new(maxX, top, maxZ), layer.Material)
+	end
+	fillBox(
+		Vector3.new(minX, bounds.BottomY - snapUp(area.BedrockThickness), minZ),
+		Vector3.new(maxX, bounds.BottomY, maxZ),
+		DigConfig.BedrockMaterial
+	)
+end
+
+-- True if any voxel within `radius` of the point has terrain in it.
+function DigWorld.isSolidNear(position: Vector3, radius: number): boolean
+	local half = Vector3.one * radius
+	local region = Region3.new(position - half, position + half):ExpandToGrid(VOXEL)
+	local ok, materials, occupancies = pcall(function()
+		return terrain:ReadVoxels(region, VOXEL)
+	end)
+	if not ok then
+		return false
+	end
+	local size = materials.Size
+	for x = 1, size.X do
+		for y = 1, size.Y do
+			for z = 1, size.Z do
+				if materials[x][y][z] ~= Enum.Material.Air and occupancies[x][y][z] > 0.1 then
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
+local function isFullySolid(position: Vector3): boolean
+	local region = Region3.new(position - Vector3.one * 2, position + Vector3.one * 2):ExpandToGrid(VOXEL)
+	local ok, materials, occupancies = pcall(function()
+		return terrain:ReadVoxels(region, VOXEL)
+	end)
+	if not ok then
+		return false
+	end
+	local size = materials.Size
+	for x = 1, size.X do
+		for y = 1, size.Y do
+			for z = 1, size.Z do
+				if materials[x][y][z] == Enum.Material.Air or occupancies[x][y][z] < 0.9 then
+					return false
+				end
+			end
+		end
+	end
+	return true
+end
+
+local function spawnLoot(layerIndex: number): boolean
+	local layer = DigConfig.Layers[layerIndex]
+	local margin = VOXEL
+	for _ = 1, 10 do
+		local depth = rng:NextNumber(layer.Top + margin, layer.Bottom - margin)
+		local position = Vector3.new(
+			rng:NextNumber(bounds.MinX + margin, bounds.MaxX - margin),
+			bounds.SurfaceY - depth,
+			rng:NextNumber(bounds.MinZ + margin, bounds.MaxZ - margin)
+		)
+		if isFullySolid(position) then
+			nextLootId += 1
+			buried[nextLootId] = {
+				Id = nextLootId,
+				Def = DigLogic.pickLoot(layerIndex, rng:NextNumber()),
+				Position = position,
+				LayerIndex = layerIndex,
+			}
+			layerCounts[layerIndex] += 1
+			return true
+		end
+	end
+	return false
+end
+
+function DigWorld.restockLoot()
+	for index, layer in DigConfig.Layers do
+		local missing = layer.LootCount - layerCounts[index]
+		for _ = 1, missing do
+			if not spawnLoot(index) then
+				break -- layer is mostly dug out; try again next restock
+			end
+		end
+	end
+end
+
+-- Removes and returns every buried item the dig ball uncovered.
+function DigWorld.collectInSphere(center: Vector3, radius: number): { BuriedLoot }
+	local found = {}
+	local reach = radius + DigConfig.LootPickupPadding
+	for id, loot in buried do
+		if (loot.Position - center).Magnitude <= reach then
+			buried[id] = nil
+			layerCounts[loot.LayerIndex] -= 1
+			table.insert(found, loot)
+		end
+	end
+	return found
+end
+
+function DigWorld.nearestLoot(position: Vector3, range: number): BuriedLoot?
+	local best: BuriedLoot? = nil
+	local bestDistance = range
+	for _, loot in buried do
+		local distance = (loot.Position - position).Magnitude
+		if distance < bestDistance then
+			best = loot
+			bestDistance = distance
+		end
+	end
+	return best
+end
+
+-- Leave an uncovered item in the hole with a prompt (finder's pack was full).
+function DigWorld.exposeLoot(loot: BuriedLoot, onPickup: (Player, LootDef, BasePart) -> ())
+	local part = LootVisuals.build(loot.Def)
+	part.CFrame = CFrame.new(loot.Position) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0)
+
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "Pick up"
+	prompt.ObjectText = loot.Def.Name
+	prompt.HoldDuration = 0.2
+	prompt.MaxActivationDistance = 12
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = part
+	prompt.Triggered:Connect(function(player)
+		if part.Parent then
+			onPickup(player, loot.Def, part)
+		end
+	end)
+
+	part.Parent = exposedFolder
+	task.delay(DigConfig.ExposedLootLifetime, function()
+		if part.Parent then
+			part:Destroy()
+		end
+	end)
+end
+
+function DigWorld.reset()
+	exposedFolder:ClearAllChildren()
+	table.clear(buried)
+	for index in DigConfig.Layers do
+		layerCounts[index] = 0
+	end
+	DigWorld.generateTerrain()
+	DigWorld.restockLoot()
+end
+
+function DigWorld.init()
+	bounds = resolveBounds()
+	for index in DigConfig.Layers do
+		layerCounts[index] = 0
+	end
+end
+
+return DigWorld
+]]></ProtectedString></Properties></Item><Item class="Script" referent="RBX0008"><Properties><string name="Name">Main</string><ProtectedString name="Source"><![CDATA[--!strict
+-- Boots the digging game: tests (Studio) -> terrain -> remotes -> players.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local Shared = ReplicatedStorage:WaitForChild("DigShared")
+local DigConfig = require(Shared:WaitForChild("DigConfig"))
+
+local DigWorld = require(script.Parent.DigWorld)
+local DigService = require(script.Parent.DigService)
+local PlayerData = require(script.Parent.PlayerData)
+
+if RunService:IsStudio() and DigConfig.RunSelfTestsInStudio then
+	require(Shared:WaitForChild("DigLogicTests")).run()
+end
+
+local started = os.clock()
+DigWorld.init()
+DigService.init()
+PlayerData.start()
+DigService.start()
+
+DigWorld.generateTerrain()
+DigWorld.restockLoot()
+print(string.format("[Dig] dig site ready in %.1fs", os.clock() - started))
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX0009"><Properties><string name="Name">PlayerData</string><ProtectedString name="Source"><![CDATA[--!strict
+--[[
+	PlayerData - load/save the digging profile with retries.
+
+	If a load fails (e.g. Studio without "Enable Studio Access to API
+	Services") the player gets a fresh profile that is NEVER saved, so a
+	DataStore outage can't overwrite real progress with an empty profile.
+]]
+
+local DataStoreService = game:GetService("DataStoreService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("DigShared")
+local DigConfig = require(Shared:WaitForChild("DigConfig"))
+
+export type Profile = {
+	Version: number,
+	Cash: number,
+	ShovelLevel: number,
+	BackpackLevel: number,
+	Backpack: { string },
+	TotalFound: number,
+}
+
+local PROFILE_VERSION = 1
+local MAX_RETRIES = 3
+
+local PlayerData = {}
+
+local profiles: { [Player]: Profile } = {}
+local canSave: { [Player]: boolean } = {}
+
+local store: DataStore? = nil
+local storeOk, storeResult = pcall(function()
+	return DataStoreService:GetDataStore(DigConfig.DataStoreName)
+end)
+if storeOk then
+	store = storeResult
+else
+	warn("[DigData] DataStores unavailable, progress will not save:", storeResult)
+end
+
+local function newProfile(): Profile
+	return {
+		Version = PROFILE_VERSION,
+		Cash = 0,
+		ShovelLevel = 1,
+		BackpackLevel = 1,
+		Backpack = {},
+		TotalFound = 0,
+	}
+end
+
+-- Never trust stored data blindly: clamp numbers and drop unknown items.
+local function sanitize(raw: any): Profile
+	local profile = newProfile()
+	if type(raw) ~= "table" then
+		return profile
+	end
+	if type(raw.Cash) == "number" and raw.Cash == raw.Cash then
+		profile.Cash = math.max(0, math.floor(raw.Cash))
+	end
+	if type(raw.ShovelLevel) == "number" then
+		profile.ShovelLevel = math.clamp(math.floor(raw.ShovelLevel), 1, #DigConfig.Shovels)
+	end
+	if type(raw.BackpackLevel) == "number" then
+		profile.BackpackLevel = math.clamp(math.floor(raw.BackpackLevel), 1, #DigConfig.Backpacks)
+	end
+	if type(raw.TotalFound) == "number" then
+		profile.TotalFound = math.max(0, math.floor(raw.TotalFound))
+	end
+	if type(raw.Backpack) == "table" then
+		local capacity = DigConfig.Backpacks[profile.BackpackLevel].Capacity
+		for _, id in raw.Backpack do
+			if type(id) == "string" and DigConfig.LootById[id] and #profile.Backpack < capacity then
+				table.insert(profile.Backpack, id)
+			end
+		end
+	end
+	return profile
+end
+
+local function keyFor(player: Player): string
+	return "Player_" .. player.UserId
+end
+
+local function isPermanentError(message: string): boolean
+	-- Studio without API access fails the same way every time; don't retry.
+	return string.find(message, "API", 1, true) ~= nil or string.find(message, "403", 1, true) ~= nil
+end
+
+function PlayerData.load(player: Player): Profile
+	local activeStore = store
+	if not activeStore then
+		canSave[player] = false
+		profiles[player] = newProfile()
+		return profiles[player]
+	end
+
+	local loaded = false
+	local raw: any = nil
+	for attempt = 1, MAX_RETRIES do
+		local ok, result = pcall(function()
+			return activeStore:GetAsync(keyFor(player))
+		end)
+		if ok then
+			loaded = true
+			raw = result
+			break
+		end
+		warn(string.format("[DigData] load attempt %d for %s failed: %s", attempt, player.Name, tostring(result)))
+		if isPermanentError(tostring(result)) or not player.Parent then
+			break
+		end
+		task.wait(2 ^ attempt)
+	end
+
+	local profile = sanitize(raw)
+	profiles[player] = profile
+	canSave[player] = loaded
+	if not loaded then
+		warn("[DigData] " .. player.Name .. " is playing on a temporary profile (will not save)")
+	end
+	return profile
+end
+
+function PlayerData.get(player: Player): Profile?
+	return profiles[player]
+end
+
+function PlayerData.isSaving(player: Player): boolean
+	return canSave[player] == true
+end
+
+function PlayerData.save(player: Player): boolean
+	local profile = profiles[player]
+	local activeStore = store
+	if not profile or not activeStore or not canSave[player] then
+		return false
+	end
+	local snapshot = table.clone(profile)
+	snapshot.Backpack = table.clone(profile.Backpack)
+	for attempt = 1, MAX_RETRIES do
+		local ok, err = pcall(function()
+			activeStore:UpdateAsync(keyFor(player), function()
+				return snapshot
+			end)
+		end)
+		if ok then
+			return true
+		end
+		warn(string.format("[DigData] save attempt %d for %s failed: %s", attempt, player.Name, tostring(err)))
+		task.wait(2 ^ attempt)
+	end
+	return false
+end
+
+function PlayerData.release(player: Player)
+	PlayerData.save(player)
+	profiles[player] = nil
+	canSave[player] = nil
+end
+
+function PlayerData.start()
+	task.spawn(function()
+		while true do
+			task.wait(DigConfig.AutosaveSeconds)
+			for player in profiles do
+				task.spawn(PlayerData.save, player)
+			end
+		end
+	end)
+
+	game:BindToClose(function()
+		local pending = 0
+		for player in profiles do
+			pending += 1
+			task.spawn(function()
+				PlayerData.save(player)
+				pending -= 1
+			end)
+		end
+		local deadline = os.clock() + 25
+		while pending > 0 and os.clock() < deadline do
+			task.wait(0.1)
+		end
+	end)
+
+	Players.PlayerRemoving:Connect(PlayerData.release)
+end
+
+return PlayerData
+]]></ProtectedString></Properties></Item></Item>
+<Item class="Folder" referent="RBX0012"><Properties><string name="Name">DigClient</string></Properties><Item class="LocalScript" referent="RBX0011"><Properties><string name="Name">Main</string><ProtectedString name="Source"><![CDATA[--!strict
+--[[
+	Dig client - input, HUD, effects. Computes nothing authoritative: it
+	aims, asks the server to dig, and draws whatever the server says.
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+local Shared = ReplicatedStorage:WaitForChild("DigShared")
+local DigConfig = require(Shared:WaitForChild("DigConfig"))
+local DigLogic = require(Shared:WaitForChild("DigLogic"))
+local LootVisuals = require(Shared:WaitForChild("LootVisuals"))
+
+local remotes = ReplicatedStorage:WaitForChild("DigRemotes")
+local digEvent = remotes:WaitForChild("Dig") :: RemoteEvent
+local surfaceEvent = remotes:WaitForChild("Surface") :: RemoteEvent
+local buyFunction = remotes:WaitForChild("BuyUpgrade") :: RemoteFunction
+local fxEvent = remotes:WaitForChild("DigFx") :: RemoteEvent
+local notifyEvent = remotes:WaitForChild("Notify") :: RemoteEvent
+local hintEvent = remotes:WaitForChild("LootHint") :: RemoteEvent
+
+local player = Players.LocalPlayer
+local camera = Workspace.CurrentCamera
+local terrain = Workspace.Terrain
+
+local FONT = Font.fromEnum(Enum.Font.FredokaOne)
+local CASH_GREEN = Color3.fromRGB(80, 255, 110)
+
+local function bounds(): DigLogic.Bounds
+	return {
+		MinX = remotes:GetAttribute("MinX") or 0,
+		MaxX = remotes:GetAttribute("MaxX") or 0,
+		MinZ = remotes:GetAttribute("MinZ") or 0,
+		MaxZ = remotes:GetAttribute("MaxZ") or 0,
+		SurfaceY = remotes:GetAttribute("SurfaceY") or 0,
+		BottomY = remotes:GetAttribute("BottomY") or 0,
+	}
+end
+
+local function attr(name: string, default: number): number
+	local value = player:GetAttribute(name)
+	return if type(value) == "number" then value else default
+end
+
+local fxFolder = Instance.new("Folder")
+fxFolder.Name = "DigFxLocal"
+fxFolder.Parent = Workspace
+
+--------------------------------------------------------------------------
+-- UI construction helpers
+--------------------------------------------------------------------------
+
+local function stroke(parent: GuiObject, thickness: number, color: Color3?)
+	local s = Instance.new("UIStroke")
+	s.Thickness = thickness
+	s.Color = color or Color3.fromRGB(25, 25, 30)
+	s.ApplyStrokeMode = if parent:IsA("TextLabel") or parent:IsA("TextButton")
+		then Enum.ApplyStrokeMode.Contextual
+		else Enum.ApplyStrokeMode.Border
+	s.Parent = parent
+end
+
+local function corner(parent: GuiObject, radius: UDim)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = radius
+	c.Parent = parent
+end
+
+local function label(parent: Instance, name: string, size: UDim2, position: UDim2, text: string): TextLabel
+	local l = Instance.new("TextLabel")
+	l.Name = name
+	l.Size = size
+	l.Position = position
+	l.BackgroundTransparency = 1
+	l.FontFace = FONT
+	l.Text = text
+	l.TextScaled = true
+	l.TextColor3 = Color3.new(1, 1, 1)
+	l.Parent = parent
+	return l
+end
+
+--------------------------------------------------------------------------
+-- HUD
+--------------------------------------------------------------------------
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "DigHud"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+-- Each HUD group gets its own UIScale (a UIScale on the ScreenGui would
+-- also scale the mouse-following dig ring's position).
+local uiScales: { UIScale } = {}
+local function addScale(parent: GuiObject)
+	local s = Instance.new("UIScale")
+	s.Parent = parent
+	table.insert(uiScales, s)
+end
+
+local top = Instance.new("Frame")
+top.Name = "Top"
+top.AnchorPoint = Vector2.new(0.5, 0)
+top.Position = UDim2.new(0.5, 0, 0, 14)
+top.Size = UDim2.fromOffset(600, 104)
+top.BackgroundTransparency = 1
+top.Parent = gui
+addScale(top)
+
+local cashLabel = label(top, "Cash", UDim2.fromOffset(320, 58), UDim2.new(0.5, 0, 0, 0), "$0")
+cashLabel.AnchorPoint = Vector2.new(0.5, 0)
+cashLabel.TextColor3 = CASH_GREEN
+stroke(cashLabel, 3)
+
+local hintLabel = label(top, "Hint", UDim2.fromOffset(600, 40), UDim2.new(0.5, 0, 0, 60), "Find loot")
+hintLabel.AnchorPoint = Vector2.new(0.5, 0)
+stroke(hintLabel, 2.5)
+local hintScale = Instance.new("UIScale")
+hintScale.Parent = hintLabel
+
+-- Bottom bar: backpack | stamina | depth
+local bar = Instance.new("Frame")
+bar.Name = "BottomBar"
+bar.AnchorPoint = Vector2.new(0.5, 1)
+bar.Position = UDim2.new(0.5, 0, 1, -18)
+bar.Size = UDim2.fromOffset(560, 40)
+bar.BackgroundTransparency = 1
+bar.Parent = gui
+addScale(bar)
+
+local packLabel = label(bar, "Backpack", UDim2.fromOffset(130, 40), UDim2.fromOffset(0, 0), "🎒 0/10")
+packLabel.TextXAlignment = Enum.TextXAlignment.Left
+stroke(packLabel, 2.5)
+
+local staminaBack = Instance.new("Frame")
+staminaBack.Name = "Stamina"
+staminaBack.Position = UDim2.fromOffset(170, 11)
+staminaBack.Size = UDim2.fromOffset(240, 18)
+staminaBack.BackgroundColor3 = Color3.fromRGB(40, 40, 46)
+staminaBack.BackgroundTransparency = 0.25
+staminaBack.Parent = bar
+corner(staminaBack, UDim.new(0, 6))
+stroke(staminaBack, 2)
+
+local staminaFill = Instance.new("Frame")
+staminaFill.Name = "Fill"
+staminaFill.Size = UDim2.fromScale(1, 1)
+staminaFill.BackgroundColor3 = Color3.fromRGB(200, 240, 30)
+staminaFill.Parent = staminaBack
+corner(staminaFill, UDim.new(0, 6))
+
+local boltLabel = label(bar, "Bolt", UDim2.fromOffset(28, 34), UDim2.fromOffset(140, 3), "⚡")
+boltLabel.TextColor3 = Color3.fromRGB(230, 240, 60)
+
+local depthLabel = label(bar, "Depth", UDim2.fromOffset(120, 40), UDim2.fromOffset(440, 0), "0m")
+depthLabel.TextXAlignment = Enum.TextXAlignment.Right
+stroke(depthLabel, 2.5)
+
+local layerLabel = label(bar, "Layer", UDim2.fromOffset(160, 20), UDim2.fromOffset(400, -20), "")
+layerLabel.TextXAlignment = Enum.TextXAlignment.Right
+layerLabel.TextTransparency = 0.15
+stroke(layerLabel, 2)
+
+-- Right side: upgrades + surface button
+local panel = Instance.new("Frame")
+panel.Name = "Upgrades"
+panel.AnchorPoint = Vector2.new(1, 0.5)
+panel.Position = UDim2.new(1, -16, 0.5, 0)
+panel.Size = UDim2.fromOffset(210, 210)
+panel.BackgroundTransparency = 1
+panel.Parent = gui
+addScale(panel)
+
+local list = Instance.new("UIListLayout")
+list.Padding = UDim.new(0, 10)
+list.HorizontalAlignment = Enum.HorizontalAlignment.Right
+list.SortOrder = Enum.SortOrder.LayoutOrder
+list.Parent = panel
+
+local function makeButton(name: string, order: number, color: Color3): TextButton
+	local button = Instance.new("TextButton")
+	button.Name = name
+	button.LayoutOrder = order
+	button.Size = UDim2.fromOffset(210, 60)
+	button.BackgroundColor3 = color
+	button.AutoButtonColor = true
+	button.FontFace = FONT
+	button.TextScaled = true
+	button.TextColor3 = Color3.new(1, 1, 1)
+	button.Parent = panel
+	corner(button, UDim.new(0, 12))
+	stroke(button, 2.5)
+	local pad = Instance.new("UIPadding")
+	pad.PaddingLeft = UDim.new(0, 8)
+	pad.PaddingRight = UDim.new(0, 8)
+	pad.PaddingTop = UDim.new(0, 6)
+	pad.PaddingBottom = UDim.new(0, 6)
+	pad.Parent = button
+	return button
+end
+
+local shovelButton = makeButton("ShovelUpgrade", 1, Color3.fromRGB(240, 150, 40))
+local packButton = makeButton("BackpackUpgrade", 2, Color3.fromRGB(70, 150, 255))
+local surfaceButton = makeButton("Surface", 3, Color3.fromRGB(80, 200, 110))
+surfaceButton.Text = "⬆ Surface"
+
+-- Dig cursor ring
+local ring = Instance.new("Frame")
+ring.Name = "DigRing"
+ring.AnchorPoint = Vector2.new(0.5, 0.5)
+ring.Size = UDim2.fromOffset(110, 110)
+ring.BackgroundTransparency = 1
+ring.Visible = false
+ring.Parent = gui
+corner(ring, UDim.new(1, 0))
+local ringStroke = Instance.new("UIStroke")
+ringStroke.Thickness = 2.5
+ringStroke.Transparency = 0.25
+ringStroke.Color = Color3.new(1, 1, 1)
+ringStroke.Parent = ring
+
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local function updateScale()
+	local viewport = camera.ViewportSize
+	local scale = math.clamp(math.min(viewport.X / 1280, viewport.Y / 720), 0.55, 1.25)
+	for _, s in uiScales do
+		s.Scale = scale
+	end
+end
+camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
+updateScale()
+
+--------------------------------------------------------------------------
+-- HUD state from attributes
+--------------------------------------------------------------------------
+
+local toastUntil = 0
+
+local function defaultHint(): string
+	if attr("BackpackCount", 0) >= attr("BackpackMax", 10) then
+		return "Backpack full! Sell at the green pad"
+	end
+	return "Find loot"
+end
+
+local function refreshUpgradeButton(
+	button: TextButton,
+	levelAttr: string,
+	defs: { { Name: string, Price: number } },
+	icon: string
+)
+	local nextDef = defs[attr(levelAttr, 1) + 1]
+	if not nextDef then
+		button.Text = icon .. " MAXED"
+		button.BackgroundTransparency = 0.4
+		return
+	end
+	button.Text = string.format("%s %s\n%s", icon, nextDef.Name, DigLogic.formatCash(nextDef.Price))
+	button.BackgroundTransparency = if attr("Cash", 0) >= nextDef.Price then 0 else 0.45
+end
+
+local function refreshHud()
+	cashLabel.Text = DigLogic.formatCash(attr("Cash", 0))
+	packLabel.Text = string.format("🎒 %d/%d", attr("BackpackCount", 0), attr("BackpackMax", 10))
+	packLabel.TextColor3 = if attr("BackpackCount", 0) >= attr("BackpackMax", 10)
+		then Color3.fromRGB(255, 110, 90)
+		else Color3.new(1, 1, 1)
+	refreshUpgradeButton(shovelButton, "ShovelLevel", DigConfig.Shovels, "⛏")
+	refreshUpgradeButton(packButton, "BackpackLevel", DigConfig.Backpacks, "🎒")
+	if os.clock() > toastUntil then
+		hintLabel.Text = defaultHint()
+		hintLabel.TextColor3 = Color3.new(1, 1, 1)
+	end
+end
+
+local function refreshStamina()
+	local ratio = math.clamp(attr("Stamina", 100) / math.max(1, attr("MaxStamina", 100)), 0, 1)
+	TweenService:Create(staminaFill, TweenInfo.new(0.15), { Size = UDim2.fromScale(ratio, 1) }):Play()
+	staminaFill.BackgroundColor3 = if ratio < 0.25 then Color3.fromRGB(255, 90, 60) else Color3.fromRGB(200, 240, 30)
+end
+
+player.AttributeChanged:Connect(function(name)
+	if name == "Stamina" or name == "MaxStamina" then
+		refreshStamina()
+	else
+		refreshHud()
+	end
+end)
+refreshHud()
+refreshStamina()
+
+local function showToast(text: string, color: Color3?)
+	hintLabel.Text = text
+	hintLabel.TextColor3 = color or Color3.new(1, 1, 1)
+	toastUntil = os.clock() + 2.5
+	hintScale.Scale = 1.25
+	TweenService:Create(hintScale, TweenInfo.new(0.25, Enum.EasingStyle.Back), { Scale = 1 }):Play()
+	task.delay(2.6, function()
+		if os.clock() > toastUntil then
+			refreshHud()
+		end
+	end)
+end
+
+local function bump(object: GuiObject)
+	local scale = object:FindFirstChild("BumpScale") or Instance.new("UIScale")
+	assert(scale:IsA("UIScale"))
+	scale.Name = "BumpScale"
+	scale.Parent = object
+	scale.Scale = 1.2
+	TweenService:Create(scale, TweenInfo.new(0.3, Enum.EasingStyle.Back), { Scale = 1 }):Play()
+end
+
+shovelButton.Activated:Connect(function()
+	local ok, message = buyFunction:InvokeServer("Shovel")
+	showToast(message, if ok then CASH_GREEN else Color3.fromRGB(255, 110, 90))
+	if ok then
+		bump(shovelButton)
+	end
+end)
+packButton.Activated:Connect(function()
+	local ok, message = buyFunction:InvokeServer("Backpack")
+	showToast(message, if ok then CASH_GREEN else Color3.fromRGB(255, 110, 90))
+	if ok then
+		bump(packButton)
+	end
+end)
+surfaceButton.Activated:Connect(function()
+	surfaceEvent:FireServer()
+end)
+
+--------------------------------------------------------------------------
+-- Effects
+--------------------------------------------------------------------------
+
+local rng = Random.new()
+
+local function dirtBurst(center: Vector3, radius: number, color: Color3)
+	if (camera.CFrame.Position - center).Magnitude > 220 then
+		return
+	end
+	for _ = 1, math.clamp(math.floor(radius * 1.5), 5, 14) do
+		local chunk = Instance.new("Part")
+		local s = rng:NextNumber(0.4, 0.9)
+		chunk.Size = Vector3.new(s, s, s)
+		chunk.Color = color:Lerp(Color3.new(0, 0, 0), rng:NextNumber(0, 0.25))
+		chunk.Material = Enum.Material.Ground
+		chunk.CanCollide = false
+		chunk.CanQuery = false
+		chunk.CanTouch = false
+		chunk.CastShadow = false
+		chunk.CFrame = CFrame.new(center + rng:NextUnitVector() * radius * 0.4)
+			* CFrame.Angles(rng:NextNumber(0, 6), rng:NextNumber(0, 6), 0)
+		local direction = (rng:NextUnitVector() + Vector3.new(0, 1.6, 0)).Unit
+		chunk.AssemblyLinearVelocity = direction * rng:NextNumber(14, 26)
+		chunk.AssemblyAngularVelocity = rng:NextUnitVector() * 10
+		chunk.Parent = fxFolder
+		TweenService:Create(chunk, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0.5), {
+			Size = Vector3.one * 0.05,
+		}):Play()
+		task.delay(1.05, function()
+			chunk:Destroy()
+		end)
+	end
+
+	local dust = Instance.new("Part")
+	dust.Anchored = true
+	dust.Transparency = 1
+	dust.CanCollide = false
+	dust.CanQuery = false
+	dust.CanTouch = false
+	dust.Size = Vector3.one
+	dust.Position = center
+	local attachment = Instance.new("Attachment")
+	attachment.Parent = dust
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Texture = "rbxasset://textures/particles/smoke_main.dds"
+	emitter.Color = ColorSequence.new(color)
+	emitter.Transparency = NumberSequence.new(0.35, 1)
+	emitter.Size = NumberSequence.new(radius * 0.5, radius * 1.1)
+	emitter.Lifetime = NumberRange.new(0.6, 1)
+	emitter.Speed = NumberRange.new(3, 7)
+	emitter.SpreadAngle = Vector2.new(180, 180)
+	emitter.Drag = 4
+	emitter.Enabled = false
+	emitter.Parent = attachment
+	dust.Parent = fxFolder
+	emitter:Emit(10)
+	task.delay(1.5, function()
+		dust:Destroy()
+	end)
+end
+
+fxEvent.OnClientEvent:Connect(function(center: Vector3, radius: number, color: Color3)
+	if typeof(center) == "Vector3" and type(radius) == "number" and typeof(color) == "Color3" then
+		dirtBurst(center, radius, color)
+	end
+end)
+
+-- Loot pops out of the ground, spins, then flies into the player.
+local function lootPop(lootId: string, from: Vector3)
+	local def = DigConfig.LootById[lootId]
+	if not def then
+		return
+	end
+	local part = LootVisuals.build(def)
+	part.CanQuery = false
+	part.CFrame = CFrame.new(from)
+	part.Parent = fxFolder
+
+	local up = TweenService:Create(part, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+		CFrame = CFrame.new(from + Vector3.new(0, 4, 0)) * CFrame.Angles(0, math.pi, 0),
+	})
+	up:Play()
+	up.Completed:Wait()
+	task.wait(0.25)
+
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if root and root:IsA("BasePart") then
+		local fly = TweenService:Create(part, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+			CFrame = root.CFrame,
+			Size = part.Size * 0.2,
+		})
+		fly:Play()
+		fly.Completed:Wait()
+	end
+	part:Destroy()
+	bump(packLabel)
+end
+
+notifyEvent.OnClientEvent:Connect(function(payload: any)
+	if type(payload) ~= "table" or type(payload.Text) ~= "string" then
+		return
+	end
+	local color = if typeof(payload.Color) == "Color3" then payload.Color else nil
+	showToast(payload.Text, color)
+	if type(payload.LootId) == "string" and typeof(payload.Position) == "Vector3" then
+		task.spawn(lootPop, payload.LootId, payload.Position)
+		bump(cashLabel)
+	end
+end)
+
+--------------------------------------------------------------------------
+-- Loot detector marker
+--------------------------------------------------------------------------
+
+local markerPart = Instance.new("Part")
+markerPart.Name = "LootMarker"
+markerPart.Anchored = true
+markerPart.Transparency = 1
+markerPart.CanCollide = false
+markerPart.CanQuery = false
+markerPart.CanTouch = false
+markerPart.Size = Vector3.one * 0.2
+markerPart.Parent = fxFolder
+
+local markerGui = Instance.new("BillboardGui")
+markerGui.Size = UDim2.fromOffset(90, 90)
+markerGui.AlwaysOnTop = true
+markerGui.Enabled = false
+markerGui.Parent = markerPart
+
+local diamond = Instance.new("Frame")
+diamond.AnchorPoint = Vector2.new(0.5, 0.5)
+diamond.Position = UDim2.fromScale(0.5, 0.35)
+diamond.Size = UDim2.fromOffset(34, 34)
+diamond.Rotation = 45
+diamond.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+diamond.Parent = markerGui
+stroke(diamond, 2, Color3.new(1, 1, 1))
+local dot = Instance.new("Frame")
+dot.AnchorPoint = Vector2.new(0.5, 0.5)
+dot.Position = UDim2.fromScale(0.5, 0.5)
+dot.Size = UDim2.fromOffset(6, 6)
+dot.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
+dot.Parent = diamond
+
+local markerDistance = label(markerGui, "Distance", UDim2.new(1, 0, 0, 24), UDim2.fromScale(0, 0.68), "")
+stroke(markerDistance, 2)
+
+local markerTarget: Vector3? = nil
+
+hintEvent.OnClientEvent:Connect(function(position: Vector3?, rarity: string?)
+	if typeof(position) == "Vector3" then
+		markerTarget = position
+		markerPart.Position = position
+		markerGui.Enabled = true
+		local color = rarity and DigConfig.RarityColors[rarity :: any]
+		diamond.BackgroundColor3 = if color and rarity ~= "Common" then color else Color3.fromRGB(0, 170, 255)
+	else
+		markerTarget = nil
+		markerGui.Enabled = false
+	end
+end)
+
+--------------------------------------------------------------------------
+-- Digging input
+--------------------------------------------------------------------------
+
+local equippedTool: Tool? = nil
+local holding = false
+local lastDig = 0
+local baseGrips: { [Tool]: CFrame } = setmetatable({}, { __mode = "k" }) :: any
+
+local rayParams = RaycastParams.new()
+rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+local function aim(): RaycastResult?
+	local character = player.Character
+	local exposed = Workspace:FindFirstChild("ExposedLoot")
+	local ignore: { Instance } = { fxFolder }
+	if character then
+		table.insert(ignore, character)
+	end
+	if exposed then
+		table.insert(ignore, exposed)
+	end
+	rayParams.FilterDescendantsInstances = ignore
+	local mouse = UserInputService:GetMouseLocation()
+	local ray = camera:ViewportPointToRay(mouse.X, mouse.Y)
+	return Workspace:Raycast(ray.Origin, ray.Direction * 400, rayParams)
+end
+
+-- Mirrors the server checks only to colour the ring; the server re-checks.
+local function evaluate(result: RaycastResult?): (boolean, string?)
+	if not result or result.Instance ~= terrain then
+		return false, nil
+	end
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root or not root:IsA("BasePart") then
+		return false, nil
+	end
+	local shovel = DigLogic.getShovel(attr("ShovelLevel", 1))
+	if (result.Position - root.Position).Magnitude > shovel.Reach then
+		return false, "Too far"
+	end
+	local b = bounds()
+	if not DigLogic.isInsideBounds(result.Position, b, 2) then
+		return false, nil
+	end
+	local layer = DigLogic.getLayer(b.SurfaceY - (result.Position - result.Normal).Y)
+	if not DigLogic.canDig(shovel, layer) then
+		return false, "Need " .. DigLogic.requiredShovelName(layer)
+	end
+	if attr("Stamina", 100) < DigLogic.staminaCost(shovel, layer) then
+		return false, "Too tired"
+	end
+	return true, nil
+end
+
+local function swing(tool: Tool)
+	local baseGrip = baseGrips[tool] or tool.Grip
+	local down = TweenService:Create(tool, TweenInfo.new(0.08, Enum.EasingStyle.Quad), {
+		Grip = baseGrip * CFrame.new(0, 0.6, 0) * CFrame.Angles(math.rad(-40), 0, 0),
+	})
+	down:Play()
+	down.Completed:Once(function()
+		TweenService:Create(tool, TweenInfo.new(0.18, Enum.EasingStyle.Back), { Grip = baseGrip }):Play()
+	end)
+end
+
+local function tryDig()
+	local tool = equippedTool
+	if not tool then
+		return
+	end
+	local shovel = DigLogic.getShovel(attr("ShovelLevel", 1))
+	local now = os.clock()
+	if now - lastDig < shovel.Cooldown then
+		return
+	end
+	local result = aim()
+	local ok = evaluate(result)
+	if not ok or not result then
+		return
+	end
+	lastDig = now
+	swing(tool)
+	digEvent:FireServer(result.Position, result.Normal)
+end
+
+local function bindTool(tool: Tool)
+	equippedTool = tool
+	if baseGrips[tool] then
+		return -- already wired up on an earlier equip
+	end
+	local baseGrip = tool.Grip
+	baseGrips[tool] = baseGrip
+	tool.Activated:Connect(function()
+		holding = true
+		tryDig()
+	end)
+	tool.Deactivated:Connect(function()
+		holding = false
+	end)
+	tool.Unequipped:Connect(function()
+		holding = false
+		if equippedTool == tool then
+			equippedTool = nil
+		end
+		tool.Grip = baseGrip
+	end)
+end
+
+local function watchCharacter(character: Model)
+	equippedTool = nil
+	holding = false
+	character.ChildAdded:Connect(function(child)
+		if child:IsA("Tool") and child:GetAttribute("DigTool") then
+			bindTool(child)
+		end
+	end)
+	for _, child in character:GetChildren() do
+		if child:IsA("Tool") and child:GetAttribute("DigTool") then
+			bindTool(child)
+		end
+	end
+end
+
+player.CharacterAdded:Connect(watchCharacter)
+if player.Character then
+	watchCharacter(player.Character)
+end
+
+RunService.RenderStepped:Connect(function()
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+
+	-- Depth meter
+	local b = bounds()
+	if root and root:IsA("BasePart") then
+		local feet = root.Position - Vector3.new(0, 3, 0)
+		local depth = b.SurfaceY - feet.Y
+		if depth > 0.5 and DigLogic.isInsideBounds(feet, b, 2) then
+			depthLabel.Text = string.format("%dm", math.floor(depth))
+			layerLabel.Text = DigLogic.getLayer(depth).Name
+		else
+			depthLabel.Text = "0m"
+			layerLabel.Text = ""
+		end
+	end
+
+	-- Marker distance
+	if markerTarget and root and root:IsA("BasePart") then
+		markerDistance.Text = string.format("%dm", math.floor((markerTarget - root.Position).Magnitude))
+	end
+
+	-- Cursor ring + hold-to-dig
+	if equippedTool then
+		local mouse = UserInputService:GetMouseLocation()
+		ring.Position = UDim2.fromOffset(mouse.X, mouse.Y)
+		local result = aim()
+		local ok, reason = evaluate(result)
+		ring.Visible = result ~= nil and result.Instance == terrain
+		ringStroke.Color = if ok then Color3.new(1, 1, 1) else Color3.fromRGB(255, 80, 70)
+		if reason and holding and os.clock() > toastUntil then
+			hintLabel.Text = reason
+			hintLabel.TextColor3 = Color3.fromRGB(255, 110, 90)
+		elseif not reason and os.clock() > toastUntil then
+			hintLabel.Text = defaultHint()
+			hintLabel.TextColor3 = Color3.new(1, 1, 1)
+		end
+		if holding then
+			tryDig()
+		end
+	else
+		ring.Visible = false
+	end
+end)
+]]></ProtectedString></Properties></Item></Item>
+</roblox>
